@@ -1,0 +1,99 @@
+# GoReleaser configuration for bbscope
+# Run: goreleaser release --snapshot --clean
+
+version: 2
+
+project_name: bbscope
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: bbscope
+    main: ./main.go
+    binary: bbscope
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/sw33tLie/bbscope/v2/cmd.Version={{.Version}}
+      - -X github.com/sw33tLie/bbscope/v2/cmd.Commit={{.Commit}}
+      - -X github.com/sw33tLie/bbscope/v2/cmd.BuildDate={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - docs/*
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'Features'
+      regexp: '^feat'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^fix'
+      order: 1
+    - title: 'Security'
+      regexp: '^security'
+      order: 2
+    - title: 'Performance'
+      regexp: '^perf'
+      order: 3
+    - title: 'Other'
+      order: 999
+
+release:
+  github:
+    owner: cozyGarage
+    name: bbscope
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+# Docker images (uncomment when ready)
+# dockers:
+#   - image_templates:
+#       - "ghcr.io/cozygarage/bbscope:{{ .Tag }}"
+#       - "ghcr.io/cozygarage/bbscope:latest"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"

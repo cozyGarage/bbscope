@@ -2,6 +2,7 @@ package storage
 
 import (
 	"testing"
+	"time"
 )
 
 func TestValidateDatabaseName(t *testing.T) {
@@ -161,5 +162,38 @@ func TestErrInvalidDatabaseName(t *testing.T) {
 	}
 	if ErrInvalidDatabaseName.Error() == "" {
 		t.Error("ErrInvalidDatabaseName.Error() should not be empty")
+	}
+}
+
+func TestDefaultPoolConfig(t *testing.T) {
+	cfg := DefaultPoolConfig()
+
+	if cfg.MaxOpenConns != 25 {
+		t.Errorf("MaxOpenConns = %d, want 25", cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns != 5 {
+		t.Errorf("MaxIdleConns = %d, want 5", cfg.MaxIdleConns)
+	}
+	if cfg.ConnMaxLifetime != 5*time.Minute {
+		t.Errorf("ConnMaxLifetime = %v, want 5m", cfg.ConnMaxLifetime)
+	}
+	if cfg.ConnMaxIdleTime != 5*time.Minute {
+		t.Errorf("ConnMaxIdleTime = %v, want 5m", cfg.ConnMaxIdleTime)
+	}
+}
+
+func TestPoolConfigCustomValues(t *testing.T) {
+	cfg := PoolConfig{
+		MaxOpenConns:    50,
+		MaxIdleConns:    10,
+		ConnMaxLifetime: 10 * time.Minute,
+		ConnMaxIdleTime: 2 * time.Minute,
+	}
+
+	if cfg.MaxOpenConns != 50 {
+		t.Errorf("MaxOpenConns = %d, want 50", cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns != 10 {
+		t.Errorf("MaxIdleConns = %d, want 10", cfg.MaxIdleConns)
 	}
 }

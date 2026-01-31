@@ -99,13 +99,37 @@ CREATE INDEX IF NOT EXISTS idx_changes_time ON scope_changes(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_changes_program ON scope_changes(program_url, occurred_at);
 `
 
-func Open(connectionString string) (*DB, error) {
-	// connectionString is expected to be a valid Postgres connection URL or DSN
-	// e.g. "postgres://user:password@localhost/dbname?sslmode=disable"
+// PoolConfig holds database connection pool settings.
+type PoolConfig struct {
+	MaxOpenConns    int           // Maximum number of open connections (default: 25)
+	MaxIdleConns    int           // Maximum number of idle connections (default: 5)
+	ConnMaxLifetime time.Duration // Maximum connection lifetime (default: 5 minutes)
+	ConnMaxIdleTime time.Duration // Maximum idle time for connections (default: 5 minutes)
+}
+
+// DefaultPoolConfig returns sensible defaults for connection pooling.
+func DefaultPoolConfig() PoolConfig {
+	return PoolConfig{
+		MaxOpenConns:    25,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: 5 * time.Minute,
+		ConnMaxIdleTime: 5 * time.Minute,
+	}
+}
+
+// OpenWithPool opens a database connection with custom pool configuration.
+func OpenWithPool(connectionString string, pool PoolConfig) (*DB, error) {
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection to %s: %w", redactConnectionString(connectionString), err)
 	}
+
+	// Configure connection pool
+	db.SetMaxOpenConns(pool.MaxOpenConns)
+	db.SetMaxIdleConns(pool.MaxIdleConns)
+	db.SetConnMaxLifetime(pool.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(pool.ConnMaxIdleTime)
+
 	if err := db.Ping(); err != nil {
 		// Check if database doesn't exist, try to create it
 		if strings.Contains(err.Error(), "does not exist") {
@@ -124,6 +148,10 @@ func Open(connectionString string) (*DB, error) {
 		return nil, fmt.Errorf("migrating schema: %w", err)
 	}
 	return &DB{sql: db}, nil
+}
+
+func Open(connectionString string) (*DB, error) {
+	return OpenWithPool(connectionString, DefaultPoolConfig())
 }
 
 // createDatabase connects to the default "postgres" database and creates the target database

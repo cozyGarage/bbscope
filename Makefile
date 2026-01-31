@@ -178,5 +178,17 @@ release: build-all
 	@echo "Release archives in $(DIST_DIR)/"
 	@ls -la $(DIST_DIR)/
 
+## release-snapshot: Create a snapshot release with GoReleaser
+release-snapshot:
+	@echo "Creating snapshot release..."
+	@which goreleaser > /dev/null || (echo "Install goreleaser: https://goreleaser.com/install/" && exit 1)
+	goreleaser release --snapshot --clean
+
+## release-dry-run: Dry run of GoReleaser
+release-dry-run:
+	@echo "Dry run of release..."
+	@which goreleaser > /dev/null || (echo "Install goreleaser: https://goreleaser.com/install/" && exit 1)
+	goreleaser release --snapshot --skip=publish --clean
+
 ## all: Run fmt, vet, lint, test, and build
 all: fmt vet lint test build
