@@ -1,0 +1,40 @@
+# Binaries
+bbscope
+bbscope.exe
+bbscope*
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build directories
+build/
+dist/
+
+# Test files
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Database files
+*.sqlite
+*.db
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Config files with secrets (don't commit these!)
+.bbscope.yaml
+
+# Dependency directories
+vendor/

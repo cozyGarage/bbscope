@@ -1,0 +1,15 @@
+# Ignore git files
+.git
+.gitignore
+
+# Ignore documentation
+README.md
+REFACTOR.md
+LICENSE
+
+# Ignore CI/CD files (not needed in image)
+.github
+
+# Ignore logo
+logo.svg
+
