@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	bcplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/bugcrowd"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
@@ -15,9 +16,10 @@ var pollBcCmd = &cobra.Command{
 	Short: "Poll Bugcrowd programs",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		token, _ := cmd.Flags().GetString("token") // Token is CLI-only, not from config
-		email := viper.GetString("bugcrowd.email")
-		password := viper.GetString("bugcrowd.password")
-		otpSecret := viper.GetString("bugcrowd.otpsecret")
+		// Use credentials package (checks keychain first, then config file)
+		email := credentials.Get("bugcrowd.email")
+		password := credentials.Get("bugcrowd.password")
+		otpSecret := credentials.Get("bugcrowd.otpsecret")
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
 			whttp.SetupProxy(proxy)

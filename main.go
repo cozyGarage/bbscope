@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime/debug"
 	"syscall"
 
 	"github.com/cozyGarage/bbscope/v2/cmd"
-	"github.com/sirupsen/logrus"
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
 )
 
 func main() {
@@ -17,9 +18,9 @@ func main() {
 	defer func() {
 		if r := recover(); r != nil {
 			// Log the panic with stack trace for debugging
-			logrus.Errorf("Fatal error: %v", r)
-			if logrus.GetLevel() >= logrus.DebugLevel {
-				logrus.Debugf("Stack trace:\n%s", debug.Stack())
+			utils.Log.Errorf("Fatal error: %v", r)
+			if utils.Log.GetLevel() <= slog.LevelDebug {
+				utils.Log.Debugf("Stack trace:\n%s", debug.Stack())
 			} else {
 				fmt.Fprintf(os.Stderr, "An unexpected error occurred. Run with --debug for more details.\n")
 			}

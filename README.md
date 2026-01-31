@@ -42,7 +42,7 @@ Visit [bbscope.com](https://bbscope.com/) to explore an hourly-updated list of p
 Ensure you have a recent version of Go installed, then run:
 
 ```bash
-go install github.com/sw33tLie/bbscope/v2@latest
+go install github.com/cozyGarage/bbscope/v2@latest
 ```
 
 ### Docker Installation
@@ -51,12 +51,12 @@ You can also run `bbscope` using Docker. The Docker image is automatically built
 
 **Pull the latest image:**
 ```bash
-docker pull ghcr.io/sw33tlie/bbscope:latest
+docker pull ghcr.io/cozygarage/bbscope:latest
 ```
 
 **Run bbscope with Docker:**
 ```bash
-docker run --rm ghcr.io/sw33tlie/bbscope:latest [command] [flags]
+docker run --rm ghcr.io/cozygarage/bbscope:latest [command] [flags]
 ```
 
 **Tip:** Add `--pull=always` to the command if you want to automatically always use the latest bbscope version.
@@ -67,7 +67,7 @@ docker run --rm ghcr.io/sw33tlie/bbscope:latest [command] [flags]
 # Run with config mounted
 docker run --rm \
   -v ~/.bbscope.yaml:/root/.bbscope.yaml \
-  ghcr.io/sw33tlie/bbscope:latest poll --db -b -p
+  ghcr.io/cozygarage/bbscope:latest poll --db -b -p
 ```
 
 **Note:** The container connects to your PostgreSQL database using the `db_url` configured in `~/.bbscope.yaml`. Make sure your database is accessible from the container (use `host.docker.internal` for local databases on macOS/Windows, or your database's network address).
@@ -76,27 +76,44 @@ docker run --rm \
 
 ## 🔐 Configuration
 
-`bbscope` requires API credentials for private programs and a PostgreSQL connection URL. After running the tool for the first time, it will create a configuration file at `~/.bbscope.yaml`.
+`bbscope` stores credentials securely in your operating system's native keychain:
+- **macOS**: Keychain
+- **Windows**: Credential Manager
+- **Linux**: Secret Service (GNOME Keyring, KWallet)
 
-You'll need to fill in your credentials and database URL:
+### Setting Up Credentials
+
+Use the `config` command to manage credentials securely:
+
+```bash
+# Store credentials in OS keychain
+bbscope config set hackerone.username
+bbscope config set hackerone.token
+bbscope config set bugcrowd.email
+bbscope config set bugcrowd.password
+
+# List stored credential keys
+bbscope config list
+
+# Get a stored credential
+bbscope config get hackerone.username
+
+# Delete a credential
+bbscope config delete hackerone.token
+
+# Migrate existing config file credentials to keychain
+bbscope config migrate
+```
+
+### Config File (Legacy/Fallback)
+
+A configuration file at `~/.bbscope.yaml` is still supported for database URL and as a fallback. The config command will prompt for values securely without echoing to the terminal.
 
 ```yaml
 # PostgreSQL connection URL
 db_url: "postgres://user:password@localhost:5432/bbscope?sslmode=disable"
 
-hackerone:
-  username: "" # HackerOne username
-  token: "" # https://docs.hackerone.com/en/articles/8410331-api-token
-bugcrowd:
-  email: ""
-  password: ""
-  otpsecret: "" # Your 2FA secret key string
-intigriti:
-  token: "" # https://app.intigriti.com/researcher/personal-access-tokens
-yeswehack:
-  email: ""
-  password: ""
-  otpsecret: "" # Your 2FA secret key string
+# AI configuration (optional)
 ai:
   provider: "openai"
   api_key: "" # or set OPENAI_API_KEY env var
@@ -105,7 +122,7 @@ ai:
   max_concurrency: 10
 ```
 
-Alternatively, you can provide credentials directly via command-line flags when running a `poll` subcommand. Flags will always override values in the configuration file.
+Alternatively, you can provide credentials directly via command-line flags when running a `poll` subcommand. Flags will always override values in the configuration file and keychain.
 
 **Authentication Flags for `poll` Subcommands:**
 

@@ -8,6 +8,7 @@ This guide helps you diagnose and resolve common issues when using bbscope.
 
 - [Installation Issues](#installation-issues)
 - [Configuration Issues](#configuration-issues)
+- [Keychain Issues](#keychain-issues)
 - [Database Issues](#database-issues)
 - [Platform-Specific Issues](#platform-specific-issues)
 - [Authentication Issues](#authentication-issues)
@@ -38,7 +39,7 @@ go: module github.com/sw33tLie/bbscope/v2: no matching versions
    ```
 3. Try with explicit version:
    ```bash
-   go install github.com/sw33tLie/bbscope/v2@latest
+   go install github.com/cozyGarage/bbscope/v2@latest
    ```
 
 ### Binary not found after install
@@ -80,6 +81,17 @@ bbscope --help
 **Problem:** Config contains sensitive credentials
 
 **Solution:**
+Use the secure keychain storage instead:
+```bash
+# Store credentials in OS keychain
+bbscope config set hackerone.token
+bbscope config set bugcrowd.password
+
+# Migrate existing config to keychain
+bbscope config migrate
+```
+
+For legacy config file:
 ```bash
 chmod 600 ~/.bbscope.yaml
 ```
@@ -88,12 +100,88 @@ chmod 600 ~/.bbscope.yaml
 
 **Problem:** Credentials in environment not picked up
 
-**Note:** Currently, only `OPENAI_API_KEY` is read from environment. Platform credentials must be in config file or passed as flags.
+**Note:** Currently, only `OPENAI_API_KEY` is read from environment. Platform credentials should be stored in the OS keychain using `bbscope config set`.
 
 **Workaround for scripts:**
 ```bash
 bbscope poll h1 --user "$H1_USER" --token "$H1_TOKEN"
 ```
+
+---
+
+## Keychain Issues
+
+### Keychain not available (Linux)
+
+**Error:**
+```
+secret service not available
+```
+
+**Solutions:**
+1. Install and start a secret service:
+   ```bash
+   # GNOME Keyring
+   sudo apt install gnome-keyring
+   # Or KDE Wallet
+   sudo apt install kwalletmanager
+   ```
+2. Ensure D-Bus is running:
+   ```bash
+   eval $(dbus-launch --sh-syntax)
+   ```
+3. Fall back to config file if keychain unavailable
+
+### Keychain access denied (macOS)
+
+**Error:**
+```
+keychain access denied
+```
+
+**Solutions:**
+1. Grant terminal access to Keychain in System Preferences > Security & Privacy
+2. Unlock Keychain:
+   ```bash
+   security unlock-keychain ~/Library/Keychains/login.keychain-db
+   ```
+
+### Keychain credential not found
+
+**Error:**
+```
+credential not found in keychain
+```
+
+**Solutions:**
+1. Check if credential exists:
+   ```bash
+   bbscope config list
+   bbscope config get <key>
+   ```
+2. Store the credential:
+   ```bash
+   bbscope config set hackerone.token
+   ```
+3. Migrate from config file:
+   ```bash
+   bbscope config migrate
+   ```
+
+### Windows Credential Manager issues
+
+**Error:**
+```
+The specified item could not be found in the keychain
+```
+
+**Solutions:**
+1. Open Credential Manager (Control Panel > User Accounts > Credential Manager)
+2. Check "Generic Credentials" for "bbscope" entries
+3. Re-add credential:
+   ```powershell
+   bbscope config set hackerone.token
+   ```
 
 ---
 

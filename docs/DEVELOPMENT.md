@@ -93,7 +93,7 @@ Recommended extensions:
 
 ```bash
 # Clone repository
-git clone https://github.com/sw33tLie/bbscope.git
+git clone https://github.com/cozyGarage/bbscope.git
 cd bbscope
 
 # Install dependencies

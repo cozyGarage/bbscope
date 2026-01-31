@@ -20,6 +20,7 @@ The following security issues identified in this audit have been addressed:
 | No graceful shutdown handling | Low | ✅ Fixed |
 | No panic recovery in main | Low | ✅ Fixed |
 | OTP secrets not wiped from memory | Low | ✅ Fixed |
+| Credentials stored in plaintext config file | Medium | ✅ Fixed |
 
 ---
 
@@ -27,27 +28,37 @@ The following security issues identified in this audit have been addressed:
 
 ### 1.1 Credential Storage
 
-**Finding: Credentials stored in plaintext config file**
-- **Severity**: Medium
-- **Location**: `~/.bbscope.yaml`
-- **Issue**: All platform credentials (passwords, API tokens, OTP secrets) are stored in plaintext
-- **Code Reference**: [cmd/root.go](cmd/root.go#L107-L124)
+**Finding: ~~Credentials stored in plaintext config file~~ ✅ FIXED**
+- **Severity**: Medium → **Resolved**
+- **Location**: `pkg/credentials/credentials.go`
+- **Issue**: All platform credentials were stored in plaintext config file
 
-```yaml
-# Current storage format
-hackerone:
-  username: "user"
-  token: "api_token"  # Plaintext!
-bugcrowd:
-  password: "secret"   # Plaintext!
-  otpsecret: "base32"  # Plaintext 2FA secret!
+**Fix implemented:**
+- Added OS-native keychain integration using `github.com/zalando/go-keyring`
+- Credentials now stored securely in:
+  - macOS: Keychain
+  - Windows: Credential Manager
+  - Linux: Secret Service (GNOME Keyring, KWallet)
+- Added `bbscope config` command for credential management
+- Migration path from config file to keychain via `bbscope config migrate`
+
+**Usage:**
+```bash
+# Store credentials securely
+bbscope config set hackerone.token
+bbscope config set bugcrowd.password
+
+# List stored credentials
+bbscope config list
+
+# Migrate from config file
+bbscope config migrate
 ```
 
-**Recommendations**:
-1. ~~Warn users about file permissions on first creation~~ ✅ **IMPLEMENTED** - Config file now created with 0600 permissions and a warning is shown if permissions are too open
-2. ~~Document recommended `chmod 600 ~/.bbscope.yaml`~~ ✅ **IMPLEMENTED** - Automatically enforced
-3. Consider supporting OS keychain integration (macOS Keychain, Windows Credential Manager)
-4. Support environment variable fallbacks for all credentials (partially implemented)
+**Additional protections still in place:**
+- Config file created with 0600 permissions
+- Warning shown if config file permissions are too open
+- Environment variable fallbacks supported
 
 ### 1.2 OTP Secret Handling
 

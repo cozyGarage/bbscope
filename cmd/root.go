@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 
-	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 )
 
@@ -98,7 +98,7 @@ func initConfig() {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		home, err := homedir.Dir()
+		home, err := os.UserHomeDir()
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -114,8 +114,8 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			// Config file not found; create it with defaults.
-			home, _ := homedir.Dir()
-			configPath := home + "/.bbscope.yaml"
+			home, _ := os.UserHomeDir()
+			configPath := filepath.Join(home, ".bbscope.yaml")
 			if err := viper.SafeWriteConfigAs(configPath); err != nil {
 				fmt.Printf("Error creating config file: %s", err)
 			} else {

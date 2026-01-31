@@ -55,6 +55,8 @@ bbscope/
 │   ├── poll_ywh.go         # YesWeHack polling subcommand
 │   ├── poll_immunefi.go    # Immunefi polling subcommand
 │   ├── poll_dev.go         # Development testing command
+│   ├── config.go           # Credential management commands
+│   ├── version.go          # Version command
 │   ├── db.go               # Database interaction commands
 │   ├── db_ignore.go        # Program ignore/unignore commands
 │   ├── get.go              # Parent for get subcommands
@@ -66,11 +68,14 @@ bbscope/
 │   └── dev.go              # Development utilities
 ├── internal/               # Private application code
 │   └── utils/
-│       └── utils.go        # Logging, IP/CIDR validation
+│       └── utils.go        # Logging (slog-based), IP/CIDR validation
 ├── pkg/                    # Public library packages
 │   ├── ai/                 # AI/LLM integration
 │   │   ├── normalizer.go   # OpenAI normalizer implementation
 │   │   └── normalizer_test.go
+│   ├── credentials/        # Secure credential storage
+│   │   ├── credentials.go  # OS keychain integration
+│   │   └── credentials_test.go
 │   ├── otp/                # TOTP 2FA support
 │   │   └── otp.go          # TOTP code generation
 │   ├── platforms/          # Platform-specific polling
@@ -79,7 +84,8 @@ bbscope/
 │   │   ├── bugcrowd/       # Bugcrowd implementation
 │   │   ├── intigriti/      # Intigriti implementation
 │   │   ├── yeswehack/      # YesWeHack implementation
-│   │   └── immunefi/       # Immunefi implementation
+│   │   ├── immunefi/       # Immunefi implementation
+│   │   └── dev/            # Development/testing platform
 │   ├── scope/              # Scope data structures & processing
 │   │   └── scope.go        # ScopeElement, ProgramData, categories
 │   ├── storage/            # Database layer
@@ -88,6 +94,8 @@ bbscope/
 │   │   ├── normalize.go    # URL/target normalization
 │   │   ├── transform.go    # Aggressive transformations
 │   │   └── extra.go        # Additional utilities
+│   ├── validate/           # Input validation utilities
+│   │   └── validate.go     # Validation functions
 │   ├── whttp/              # HTTP client wrapper
 │   │   └── whttp.go        # Retryable HTTP with debugging
 │   └── wildcards/          # Wildcard domain processing
@@ -109,6 +117,13 @@ bbscope
 │   ├── it                  # Intigriti
 │   ├── ywh                 # YesWeHack
 │   └── immunefi            # Immunefi
+├── config                  # Credential management
+│   ├── set                 # Store credential in keychain
+│   ├── get                 # Retrieve credential
+│   ├── delete              # Remove credential
+│   ├── list                # List all credential keys
+│   └── migrate             # Migrate from config file
+├── version                 # Show version info
 └── db                      # Database operations
     ├── stats               # Show statistics
     ├── print               # Print raw scope data
@@ -129,6 +144,7 @@ bbscope
 **Key Files:**
 - `root.go`: Configuration initialization via Viper, legacy command redirection
 - `poll.go`: Main polling logic, multi-platform orchestration
+- `config.go`: Credential management via OS keychain
 - `db.go`: Database query commands
 
 ### 2. Platform Pollers (`pkg/platforms/`)

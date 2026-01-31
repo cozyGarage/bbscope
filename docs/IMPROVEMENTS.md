@@ -25,6 +25,10 @@ The following improvements have been implemented:
 | 13 | Connection pooling configuration | ✅ Done | `pkg/storage/storage.go` |
 | 14 | GitHub Actions CI/CD | ✅ Done | `.github/workflows/` |
 | 15 | Comprehensive test coverage | ✅ Done | `*_test.go` files |
+| 16 | OS Keychain integration | ✅ Done | `pkg/credentials/credentials.go` |
+| 17 | Config command for credentials | ✅ Done | `cmd/config.go` |
+| 18 | Remove go-homedir dependency | ✅ Done | `cmd/root.go` (use `os.UserHomeDir()`) |
+| 19 | Migrate logrus to stdlib slog | ✅ Done | `internal/utils/utils.go` |
 
 ---
 
@@ -108,33 +112,25 @@ ENTRYPOINT ["./bbscope"]
 
 ## Security Improvements
 
-### 5. OS Keychain Integration
+### ~~5. OS Keychain Integration~~ ✅ IMPLEMENTED
 
-**Description:**
-Store credentials in OS-native secure storage instead of plaintext config file.
+**Status:** ✅ Implemented
 
 **Implementation:**
-```go
-// Use keyring package
-import "github.com/zalando/go-keyring"
-
-func getCredential(service, key string) (string, error) {
-    // Try keychain first
-    if val, err := keyring.Get(service, key); err == nil {
-        return val, nil
-    }
-    // Fall back to config file
-    return viper.GetString(key), nil
-}
-```
+- Added `pkg/credentials/credentials.go` package for secure credential storage
+- Uses `github.com/zalando/go-keyring` for OS-native keychain integration
+- Added `bbscope config` command for credential management:
+  - `bbscope config set <key>` - Store credential in OS keychain
+  - `bbscope config get <key>` - Retrieve credential
+  - `bbscope config delete <key>` - Remove credential
+  - `bbscope config list` - List all credential keys
+  - `bbscope config migrate` - Migrate from config file to keychain
+- Platform pollers now use keychain with config file fallback
 
 **Supported Platforms:**
 - macOS: Keychain
 - Windows: Credential Manager  
 - Linux: Secret Service (GNOME Keyring, KWallet)
-
-**Effort:** Medium (4-6 hours)
-**Impact:** High (Security)
 
 ---
 

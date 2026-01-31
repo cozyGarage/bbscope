@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
@@ -15,9 +16,10 @@ var pollYwhCmd = &cobra.Command{
 	Short: "Poll YesWeHack programs",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		token, _ := cmd.Flags().GetString("token") // Token is CLI-only, not from config
-		email := viper.GetString("yeswehack.email")
-		password := viper.GetString("yeswehack.password")
-		otpSecret := viper.GetString("yeswehack.otpsecret")
+		// Use credentials package (checks keychain first, then config file)
+		email := credentials.Get("yeswehack.email")
+		password := credentials.Get("yeswehack.password")
+		otpSecret := credentials.Get("yeswehack.otpsecret")
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
 			whttp.SetupProxy(proxy)
