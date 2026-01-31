@@ -1,4 +1,4 @@
-module github.com/sw33tLie/bbscope/v2
+module github.com/cozyGarage/bbscope/v2
 
 go 1.24.0
 

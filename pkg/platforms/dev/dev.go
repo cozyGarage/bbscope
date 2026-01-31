@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/sw33tLie/bbscope/v2/pkg/platforms"
-	"github.com/sw33tLie/bbscope/v2/pkg/scope"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 // This is used for testing the changes tracking db logic. Ignore

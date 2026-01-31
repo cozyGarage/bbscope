@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/sw33tLie/bbscope/v2/pkg/scope"
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 var (

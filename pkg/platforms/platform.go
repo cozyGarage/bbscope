@@ -3,7 +3,7 @@ package platforms
 import (
 	"context"
 
-	"github.com/sw33tLie/bbscope/v2/pkg/scope"
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 // PollOptions carries optional controls/filters used by pollers.

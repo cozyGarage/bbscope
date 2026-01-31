@@ -10,9 +10,9 @@ GO_VERSION := $(shell go version | cut -d' ' -f3)
 
 # Go build flags
 LDFLAGS := -ldflags "-s -w \
-	-X 'github.com/sw33tLie/bbscope/v2/cmd.Version=$(VERSION)' \
-	-X 'github.com/sw33tLie/bbscope/v2/cmd.Commit=$(COMMIT)' \
-	-X 'github.com/sw33tLie/bbscope/v2/cmd.BuildDate=$(BUILD_DATE)'"
+	-X 'github.com/cozyGarage/bbscope/v2/cmd.Version=$(VERSION)' \
+	-X 'github.com/cozyGarage/bbscope/v2/cmd.Commit=$(COMMIT)' \
+	-X 'github.com/cozyGarage/bbscope/v2/cmd.BuildDate=$(BUILD_DATE)'"
 
 # Directories
 BUILD_DIR := build

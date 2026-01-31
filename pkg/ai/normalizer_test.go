@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sw33tLie/bbscope/v2/pkg/storage"
+	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 func TestNormalizerScenarios(t *testing.T) {

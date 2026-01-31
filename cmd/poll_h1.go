@@ -3,10 +3,10 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/sw33tLie/bbscope/v2/internal/utils"
-	"github.com/sw33tLie/bbscope/v2/pkg/platforms"
-	h1platform "github.com/sw33tLie/bbscope/v2/pkg/platforms/hackerone"
-	"github.com/sw33tLie/bbscope/v2/pkg/whttp"
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	h1platform "github.com/cozyGarage/bbscope/v2/pkg/platforms/hackerone"
+	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
 // poll h1: shorthand for --platform h1 with platform-specific flags

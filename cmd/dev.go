@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sw33tLie/bbscope/v2/pkg/storage"
+	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 var devCmd = &cobra.Command{

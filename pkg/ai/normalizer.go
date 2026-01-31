@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sw33tLie/bbscope/v2/internal/utils"
-	"github.com/sw33tLie/bbscope/v2/pkg/scope"
-	"github.com/sw33tLie/bbscope/v2/pkg/storage"
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
+	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 // ProgramInfo carries minimal details that help the LLM reason about scope entries.

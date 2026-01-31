@@ -390,7 +390,7 @@ This prevents resource exhaustion and properly surfaces errors after reasonable 
 
 4. **Container Scanning**: Scan Docker image
    ```bash
-   trivy image ghcr.io/sw33tlie/bbscope:latest
+   trivy image ghcr.io/cozygarage/bbscope:latest
    ```
 
 ---

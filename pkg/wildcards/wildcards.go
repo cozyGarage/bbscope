@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sw33tLie/bbscope/v2/internal/utils"
-	"github.com/sw33tLie/bbscope/v2/pkg/storage"
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 // Options configures how wildcards are collected.

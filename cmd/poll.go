@@ -11,15 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/sw33tLie/bbscope/v2/internal/utils"
-	"github.com/sw33tLie/bbscope/v2/pkg/ai"
-	"github.com/sw33tLie/bbscope/v2/pkg/platforms"
-	bcplatform "github.com/sw33tLie/bbscope/v2/pkg/platforms/bugcrowd"
-	h1platform "github.com/sw33tLie/bbscope/v2/pkg/platforms/hackerone"
-	itplatform "github.com/sw33tLie/bbscope/v2/pkg/platforms/intigriti"
-	ywhplatform "github.com/sw33tLie/bbscope/v2/pkg/platforms/yeswehack"
-	"github.com/sw33tLie/bbscope/v2/pkg/scope"
-	"github.com/sw33tLie/bbscope/v2/pkg/storage"
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/ai"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	bcplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/bugcrowd"
+	h1platform "github.com/cozyGarage/bbscope/v2/pkg/platforms/hackerone"
+	itplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/intigriti"
+	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
+	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 // pollCmd implements: bbscope poll

@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/sw33tLie/bbscope/v2/pkg/platforms"
-	devplatform "github.com/sw33tLie/bbscope/v2/pkg/platforms/dev"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	devplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/dev"
 )
 
 // poll it: dev platform

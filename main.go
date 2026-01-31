@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/sw33tLie/bbscope/v2/cmd"
+	"github.com/cozyGarage/bbscope/v2/cmd"
 )
 
 func main() {

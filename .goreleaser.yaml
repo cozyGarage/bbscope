@@ -25,9 +25,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/sw33tLie/bbscope/v2/cmd.Version={{.Version}}
-      - -X github.com/sw33tLie/bbscope/v2/cmd.Commit={{.Commit}}
-      - -X github.com/sw33tLie/bbscope/v2/cmd.BuildDate={{.Date}}
+      - -X github.com/cozyGarage/bbscope/v2/cmd.Version={{.Version}}
+      - -X github.com/cozyGarage/bbscope/v2/cmd.Commit={{.Commit}}
+      - -X github.com/cozyGarage/bbscope/v2/cmd.BuildDate={{.Date}}
 
 archives:
   - id: default

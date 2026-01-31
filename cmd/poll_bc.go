@@ -3,10 +3,10 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/sw33tLie/bbscope/v2/internal/utils"
-	"github.com/sw33tLie/bbscope/v2/pkg/platforms"
-	bcplatform "github.com/sw33tLie/bbscope/v2/pkg/platforms/bugcrowd"
-	"github.com/sw33tLie/bbscope/v2/pkg/whttp"
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	bcplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/bugcrowd"
+	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
 // poll bc: Bugcrowd

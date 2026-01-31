@@ -3,10 +3,10 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/sw33tLie/bbscope/v2/internal/utils"
-	"github.com/sw33tLie/bbscope/v2/pkg/platforms"
-	ywhplatform "github.com/sw33tLie/bbscope/v2/pkg/platforms/yeswehack"
-	"github.com/sw33tLie/bbscope/v2/pkg/whttp"
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
+	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
 // poll ywh: shorthand for YesWeHack
