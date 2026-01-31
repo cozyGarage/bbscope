@@ -18,6 +18,8 @@ The following security issues identified in this audit have been addressed:
 | Database name not validated (SQL injection risk) | Medium | ✅ Fixed |
 | DB password exposed in error messages | Medium | ✅ Fixed |
 | No graceful shutdown handling | Low | ✅ Fixed |
+| No panic recovery in main | Low | ✅ Fixed |
+| OTP secrets not wiped from memory | Low | ✅ Fixed |
 
 ---
 
@@ -49,14 +51,14 @@ bugcrowd:
 
 ### 1.2 OTP Secret Handling
 
-**Finding: 2FA secrets stored and transmitted in memory**
-- **Severity**: Low-Medium
+**Finding: ~~2FA secrets stored and transmitted in memory~~ ✅ FIXED**
+- **Severity**: Low-Medium → **Resolved**
 - **Location**: [pkg/otp/otp.go](pkg/otp/otp.go)
-- **Issue**: OTP secrets remain in memory; no secure wiping after use
 
-**Recommendations**:
-1. Zero out OTP secrets after code generation
-2. Consider using secure memory allocation for sensitive data
+**Fix implemented:**
+- Added `secureWipe()` function to zero out sensitive byte slices
+- OTP key and HMAC sum are wiped immediately after use via `defer`
+- Note: This is best-effort; Go runtime may still have copies
 
 ### 1.3 Basic Auth Credentials in Memory
 
@@ -321,13 +323,13 @@ This prevents resource exhaustion and properly surfaces errors after reasonable 
 
 ### 8.2 Panic Recovery
 
-**Finding: No global panic recovery**
-- **Severity**: Low
-- Unhandled panics will crash with stack traces
+**Finding: ~~No global panic recovery~~ ✅ FIXED**
+- **Severity**: Low → **Resolved**
 
-**Recommendations**:
-1. Add panic recovery in main execution path
-2. Log panics without exposing stack traces to end users
+**Fix implemented:**
+- Added `defer recover()` in main.go
+- Panics now log error message and stack trace (in debug mode)
+- Clean exit with error code 1 instead of raw stack trace
 
 ---
 
@@ -362,11 +364,12 @@ This prevents resource exhaustion and properly surfaces errors after reasonable 
 | 8 | Pin Docker base image versions (Alpine 3.19) | ✅ Fixed |
 | 9 | Add graceful shutdown support | ✅ Fixed |
 | 10 | Add input validation package | ✅ Fixed |
+| 11 | Add panic recovery in main path | ✅ Fixed |
+| 12 | Zero OTP secrets after use | ✅ Fixed |
+| 13 | Add golangci-lint configuration | ✅ Fixed |
 
-### Remaining Low Priority
-- **Add keychain integration** for credential storage
-- **Implement panic recovery** in main path
-- **Zero sensitive data** after use
+### Remaining Optional Improvements
+- **Add keychain integration** for credential storage (requires external dependency)
 
 ---
 

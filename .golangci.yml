@@ -1,0 +1,84 @@
+# golangci-lint configuration for bbscope
+# See https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Additional security linters
+    - gosec
+    - bodyclose
+    # Code quality
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    # Error handling
+    - errorlint
+    # Performance
+    - prealloc
+  disable:
+    - exhaustive
+    - exhaustruct
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104 # Audit errors not checked (we handle this case by case)
+    config:
+      global:
+        audit: enabled
+  
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # Not critical for this project
+  
+  goimports:
+    local-prefixes: github.com/cozyGarage/bbscope
+  
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gosec
+        - unparam
+        - prealloc
+    
+    # Exclude known issues in generated code
+    - path: docs/
+      linters:
+        - all
+    
+    # Allow fmt.Print in cmd package (CLI output)
+    - path: cmd/
+      text: "fmt.Print"
+      linters:
+        - forbidigo
+
+  # Maximum issues count per one linter
+  max-issues-per-linter: 50
+  
+  # Maximum count of issues with the same text
+  max-same-issues: 3
+
+severity:
+  default-severity: warning
+  rules:
+    - linters:
+        - gosec
+      severity: error

@@ -18,6 +18,9 @@ func GenerateTOTP(secret string, t time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Ensure key is wiped after use for security
+	defer secureWipe(key)
+
 	if digits <= 0 {
 		digits = 6
 	}
@@ -27,6 +30,9 @@ func GenerateTOTP(secret string, t time.Time) (string, error) {
 	mac := hmac.New(sha1.New, key)
 	mac.Write(msg[:])
 	sum := mac.Sum(nil)
+	// Wipe HMAC sum after extracting code
+	defer secureWipe(sum)
+
 	offset := sum[len(sum)-1] & 0x0F
 	code := (uint32(sum[offset])&0x7F)<<24 | (uint32(sum[offset+1])&0xFF)<<16 | (uint32(sum[offset+2])&0xFF)<<8 | (uint32(sum[offset+3]) & 0xFF)
 	mod := uint32(1)
@@ -36,6 +42,14 @@ func GenerateTOTP(secret string, t time.Time) (string, error) {
 	code = code % mod
 	format := fmt.Sprintf("%%0%dd", digits)
 	return fmt.Sprintf(format, code), nil
+}
+
+// secureWipe zeros out a byte slice to prevent sensitive data from lingering in memory.
+// Note: This is a best-effort approach; the Go runtime may still have copies.
+func secureWipe(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }
 
 // parseTOTPSecret supports multiple formats:
