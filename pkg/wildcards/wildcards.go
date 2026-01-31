@@ -225,21 +225,23 @@ func IsBlacklistedSuffix(host string) bool {
 		return true
 	}
 	
-	// Check for suffix match (with dot prefix)
-	// Find the last dot in the host
-	lastDot := strings.LastIndex(host, ".")
-	if lastDot == -1 {
-		return false
-	}
-	
-	// Extract potential suffix (everything after first dot)
-	for i := 0; i < len(host); i++ {
-		if host[i] == '.' && i < len(host)-1 {
-			suffix := host[i+1:]
-			if _, ok := blacklistedSuffixMap[suffix]; ok {
-				return true
-			}
+	// Check for suffix match by working backwards through dots
+	// For "a.b.c.amazonaws.com", check "amazonaws.com", then "c.amazonaws.com", etc.
+	remaining := host
+	for {
+		dotIdx := strings.LastIndex(remaining, ".")
+		if dotIdx == -1 {
+			break
 		}
+		
+		// Check suffix after the dot
+		suffix := remaining[dotIdx+1:]
+		if _, ok := blacklistedSuffixMap[suffix]; ok {
+			return true
+		}
+		
+		// Move to the portion before the dot for next iteration
+		remaining = remaining[:dotIdx]
 	}
 	
 	return false

@@ -428,8 +428,17 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	}
 
 	// 4. Compare incoming data against existing state
-	// Pre-allocate slices with reasonable capacity to reduce allocations
-	changes := make([]Change, 0, len(entries)/2) // Estimate ~50% will result in changes
+	// Pre-allocate slices with estimated capacity to reduce allocations.
+	// These estimates are based on typical update patterns:
+	// - ~50% of entries result in changes (additions/updates/removals)
+	// - ~25% are new entries, ~25% are updates, rest are unchanged
+	const (
+		estimatedChangeRatio = 0.5  // Expect about half of entries to have changes
+		estimatedNewRatio    = 0.25 // Expect about 1/4 to be new
+		estimatedUpdateRatio = 0.25 // Expect about 1/4 to be updates
+	)
+	
+	changes := make([]Change, 0, int(float64(len(entries))*estimatedChangeRatio))
 	processedKeys := make(map[string]bool)
 	entryByKey := make(map[string]UpsertEntry)
 	targetIDs := make(map[string]int64, len(existingMap))
@@ -437,11 +446,11 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		targetIDs[key] = ex.ID
 	}
 
-	toAdd := make([]UpsertEntry, 0, len(entries)/4)    // Estimate ~25% new entries
+	toAdd := make([]UpsertEntry, 0, int(float64(len(entries))*estimatedNewRatio))
 	toUpdate := make([]struct {
 		entry UpsertEntry
 		id    int64
-	}, 0, len(entries)/4) // Estimate ~25% updates
+	}, 0, int(float64(len(entries))*estimatedUpdateRatio))
 	toTouch := make([]int64, 0, len(entries))
 
 	for _, e := range entries {
@@ -631,13 +640,20 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		variant existingVariant
 	}
 
-	// Pre-allocate variant operation slices with estimated capacity
-	// Estimate based on average of 2 variants per entry
-	estimatedVariants := len(entryByKey) * 2
+	// Pre-allocate variant operation slices with estimated capacity.
+	// Typical entry has ~2 variants (normalized + AI-normalized).
+	// We estimate ~25% will be added, updated, or deleted.
+	const (
+		avgVariantsPerEntry    = 2
+		variantOperationRatio = 0.25 // 1/4 of variants will need operations
+	)
+	estimatedVariants := len(entryByKey) * avgVariantsPerEntry
+	variantOpCapacity := int(float64(estimatedVariants) * variantOperationRatio)
+	
 	var (
-		variantAdds    = make([]variantAddOp, 0, estimatedVariants/4)
-		variantUpdates = make([]variantUpdateOp, 0, estimatedVariants/4)
-		variantDeletes = make([]variantDeleteOp, 0, estimatedVariants/4)
+		variantAdds    = make([]variantAddOp, 0, variantOpCapacity)
+		variantUpdates = make([]variantUpdateOp, 0, variantOpCapacity)
+		variantDeletes = make([]variantDeleteOp, 0, variantOpCapacity)
 	)
 
 	for key, entry := range entryByKey {
