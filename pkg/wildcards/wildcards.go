@@ -283,9 +283,19 @@ func NormalizeForSubdomainTools(scope string) string {
 			// Replace comma with dot
 			builder.WriteByte('.')
 		case '[':
-			// Skip until closing bracket
-			for i < len(processingStr) && processingStr[i] != ']' {
-				i++
+			// Skip until closing bracket without skipping the character after it.
+			j := i + 1
+			for j < len(processingStr) && processingStr[j] != ']' {
+				j++
+			}
+			if j < len(processingStr) {
+				// Position i on the closing bracket; the outer loop's i++
+				// will move to the first character after ']'.
+				i = j
+			} else {
+				// No closing bracket found; advance i to the last character
+				// so the outer loop's i++ will terminate the loop.
+				i = len(processingStr) - 1
 			}
 		default:
 			builder.WriteByte(c)
