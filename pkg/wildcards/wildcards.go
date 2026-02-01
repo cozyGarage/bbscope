@@ -303,7 +303,6 @@ func NormalizeForSubdomainTools(scope string) string {
 	}
 	
 	result := builder.String()
-	result = strings.TrimPrefix(result, ".")
 	result = strings.Trim(result, ". ")
 	
 	return result
