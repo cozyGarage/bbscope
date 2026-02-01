@@ -451,7 +451,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		entry UpsertEntry
 		id    int64
 	}, 0, int(float64(len(entries))*estimatedUpdateRatio))
-	toTouch := make([]int64, 0, len(entries))
+	toTouch := make([]int64, 0, int(float64(len(entries))*(1.0-estimatedChangeRatio)))
 
 	for _, e := range entries {
 		key := identityKey(e.TargetRaw, e.Category)
