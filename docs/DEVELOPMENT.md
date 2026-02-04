@@ -165,6 +165,12 @@ go run . --debug-http poll h1
 
 # Run with proxy (for intercepting requests)
 go run . --proxy http://127.0.0.1:8080 poll h1
+
+# Run daemon mode
+go run . daemon --interval 5m --db -l debug
+
+# Run daemon with specific platforms
+go run . daemon --interval 10m --platforms h1,bc --db
 ```
 
 ### Docker Development

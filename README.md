@@ -169,6 +169,40 @@ db_url: "postgres://bbscope:<YOUR_SECURE_PASSWORD>@localhost:5432/bbscope?sslmod
 
 Tables are automatically created on the first run.
 
+### Notifications (Optional)
+
+Configure notifications to receive alerts when scope changes are detected:
+
+```yaml
+notifications:
+  slack:
+    webhook: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    events: ["added", "removed"]
+  
+  discord:
+    webhook: "https://discord.com/api/webhooks/YOUR/WEBHOOK/URL"
+    events: ["added"]
+  
+  telegram:
+    bot_token: "YOUR_BOT_TOKEN"
+    chat_id: "YOUR_CHAT_ID"
+  
+  email:
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    from: "alerts@example.com"
+    to: ["security@example.com"]
+    username: "alerts@example.com"
+    password: "app-password"
+  
+  webhook:
+    url: "https://api.example.com/webhooks/bbscope"
+    headers:
+      Authorization: "Bearer TOKEN"
+```
+
+See **Notification Integrations** section below for setup guides.
+
 ---
 
 ## 🛠️ Usage & Commands
@@ -203,6 +237,54 @@ The `poll` command fetches scope data from the platforms. You can poll all platf
 | `-d, --delimiter` | Delimiter for `txt` output when using multiple output flags. | `" "` |
 | `--oos` | Include out-of-scope targets in the output. | `false` |
 | `--concurrency`| Number of concurrent fetches per platform. | `5` |
+
+---
+
+### `daemon` - Scheduled Polling
+
+The `daemon` command runs bbscope as a background service that polls platforms on a schedule.
+
+**Usage:**
+```bash
+bbscope daemon --interval DURATION [flags]
+```
+
+**Flags for `daemon`:**
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `--interval` | Polling interval (e.g., 30m, 1h, 2h) | `1h` |
+| `--platforms` | Comma-separated list of platforms (e.g., h1,bc,it) | `all` |
+| `--db` | Save results to database | `false` |
+| `--ai` | Use AI normalization | `false` |
+| `--pid-file` | Write process ID to file | `""` |
+
+**Examples:**
+```bash
+# Poll all platforms every hour
+bbscope daemon --interval 1h --db
+
+# Poll specific platforms every 30 minutes with AI
+bbscope daemon --interval 30m --platforms h1,bc --db --ai
+
+# Production mode with PID file
+bbscope daemon --interval 1h --platforms h1,bc,it,ywh --db --pid-file /var/run/bbscope.pid
+```
+
+**Systemd Integration:**
+```ini
+[Unit]
+Description=bbscope Daemon
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bbscope daemon --interval 1h --db --ai
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
 
 #### AI-Assisted Normalization (Experimental)
 
@@ -273,6 +355,21 @@ Shows the most recent scope changes (additions/removals).
 
 | `--limit` | Number of recent changes to show. | `50` |
 
+#### `db diff`
+
+Compare scope between two dates to track changes over time.
+
+**Usage:** `bbscope db diff --from 2024-01-01 [flags]`
+
+| Flag | Description |
+| --- | --- |
+| `--from` | Start date (YYYY-MM-DD) (required) |
+| `--to` | End date (YYYY-MM-DD) (defaults to now) |
+| `--program` | Filter by program URL (partial match) |
+| `--only-added` | Show only additions |
+| `--only-removed` | Show only removals |
+| `--format` | Output format: `text`, `json`, `csv` |
+
 #### `db find`
 
 Search for a string in current and historical scopes.
@@ -305,7 +402,23 @@ Add a custom target to the database manually.
 
 ## 📖 Examples
 
-**1. First-Time Setup: Poll all private, bounty-only programs and save to DB**
+**1. Run Daemon - Automated Polling**
+
+Poll all platforms automatically every hour:
+
+```bash
+bbscope daemon --interval 1h --db -b -p
+```
+
+**2. Daemon with Specific Platforms**
+
+Poll only HackerOne and Bugcrowd every 30 minutes:
+
+```bash
+bbscope daemon --interval 30m --platforms h1,bc --db --ai
+```
+
+**3. First-Time Setup: Poll all private, bounty-only programs and save to DB**
 
 This is a great first command to run to populate your database.
 
@@ -313,7 +426,7 @@ This is a great first command to run to populate your database.
 bbscope poll --db -b -p
 ```
 
-**2. Get all wildcards from all platforms, aggressive extraction
+**4. Get all wildcards from all platforms, aggressive extraction
 
 ```bash
 bbscope db get wildcards -a

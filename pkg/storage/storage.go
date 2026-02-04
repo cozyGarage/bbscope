@@ -1348,6 +1348,38 @@ func (d *DB) ListRecentChanges(ctx context.Context, limit int) ([]Change, error)
 	return changes, rows.Err()
 }
 
+// GetChangesBetween returns changes between two timestamps
+func (d *DB) GetChangesBetween(ctx context.Context, from, to time.Time, programURL string) ([]Change, error) {
+	query := "SELECT occurred_at, program_url, platform, handle, target_normalized, target_raw, target_ai_normalized, category, in_scope, is_bbp, change_type FROM scope_changes WHERE occurred_at >= $1 AND occurred_at <= $2"
+	args := []interface{}{from.UTC(), to.UTC()}
+	
+	if programURL != "" {
+		query += " AND program_url LIKE $3"
+		args = append(args, "%"+programURL+"%")
+	}
+	
+	query += " ORDER BY occurred_at ASC"
+	
+	rows, err := d.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	changes := []Change{}
+	for rows.Next() {
+		var c Change
+		var inScopeInt, isBBPInt int
+		if err := rows.Scan(&c.OccurredAt, &c.ProgramURL, &c.Platform, &c.Handle, &c.TargetNormalized, &c.TargetRaw, &c.TargetAINormalized, &c.Category, &inScopeInt, &isBBPInt, &c.ChangeType); err != nil {
+			return nil, fmt.Errorf("scanning change row: %w", err)
+		}
+		c.InScope = inScopeInt == 1
+		c.IsBBP = isBBPInt == 1
+		changes = append(changes, c)
+	}
+	return changes, rows.Err()
+}
+
 type PlatformStats struct {
 	Platform        string
 	ProgramCount    int

@@ -664,9 +664,9 @@ Automatically generate changelog from commit messages.
 - [ ] Interface-based HTTP client (future)
 - [ ] Context propagation audit (future)
 
-### Phase 4: Core Features (Future)
-- [ ] Scheduled polling
-- [ ] Notification integrations
+### Phase 4: Core Features (In Progress)
+- [x] Scheduled polling (daemon mode) ✅
+- [x] Notification integrations (Slack, Discord, Telegram, Email, Webhook) ✅
 - [ ] Diff/compare command
 - [ ] Export/import
 
