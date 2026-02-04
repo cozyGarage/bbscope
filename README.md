@@ -370,6 +370,30 @@ Compare scope between two dates to track changes over time.
 | `--only-removed` | Show only removals |
 | `--format` | Output format: `text`, `json`, `csv` |
 
+| `--format` | Output format: `text`, `json`, `csv` |
+
+#### `db export`
+
+Export all database content to JSON or CSV.
+
+**Usage:** `bbscope db export [flags] > file`
+
+| Flag | Description |
+| --- | --- |
+| `--format` | Output format: `json` (default), `csv` |
+| `--platform` | Filter by platform |
+
+#### `db import`
+
+Import data from a file (backup restoration or custom targets).
+
+**Usage:** `bbscope db import --file backup.json`
+
+| Flag | Description |
+| --- | --- |
+| `--file` | Input file (defaults to stdin) |
+| `--format` | Input format: `json` (default), `csv` |
+
 #### `db find`
 
 Search for a string in current and historical scopes.

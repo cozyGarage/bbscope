@@ -637,6 +637,23 @@ Automatically generate changelog from commit messages.
 
 ---
 
+### 31. TUI Enhancements
+
+**Description:**
+Expand the BubbleTea TUI with advanced management and navigation features.
+
+**Features:**
+- **Interactive Program Browser**: Tree view navigation (Platform → Program → Targets).
+- **Advanced Filtering**: Filter by platform, category, in-scope status, and rewards.
+- **Bulk Actions**: Select multiple targets for copy-to-clipboard or export.
+- **Visual Diff**: Visual representation of scope changes between polls.
+- **Configuration Management**: Edit `~/.bbscope.yaml` directly from the TUI.
+
+**Effort:** High (2-3 days)
+**Impact:** High (User Experience)
+
+---
+
 ## Implementation Roadmap
 
 ### Phase 1: Quick Wins ✅ COMPLETE
@@ -653,7 +670,7 @@ Automatically generate changelog from commit messages.
 - [x] Validate database name ✅
 - [x] Config permissions warning ✅
 - [x] Redact DB passwords in logs ✅
-- [ ] OS keychain integration (optional)
+- [x] OS keychain integration ✅
 - [ ] Security documentation (optional)
 
 ### Phase 3: Architecture & Testing ✅ COMPLETE
@@ -664,18 +681,25 @@ Automatically generate changelog from commit messages.
 - [ ] Interface-based HTTP client (future)
 - [ ] Context propagation audit (future)
 
-### Phase 4: Core Features (In Progress)
+### Phase 4: Core Features ✅ COMPLETE
 - [x] Scheduled polling (daemon mode) ✅
 - [x] Notification integrations (Slack, Discord, Telegram, Email, Webhook) ✅
-- [ ] Diff/compare command
-- [ ] Export/import
+- [x] Diff/compare command ✅
+- [x] Export/import ✅
 
-### Phase 5: Advanced Features (Future)
+### Phase 5: TUI Enhancements (Next)
+- [ ] Interactive program browser
+- [ ] Advanced filtering & search
+- [ ] Clipboard & bulk export integration
+- [ ] Real-time polling progress visualization
+- [ ] TUI configuration editor
+
+### Phase 6: Advanced Features (Future)
 - [ ] REST API mode
 - [ ] Plugin system
 - [ ] Event-based notifications
 
-### Phase 6: Testing & Quality (Ongoing)
+### Phase 7: Testing & Quality (Ongoing)
 - [x] Unit tests for core packages ✅
 - [ ] Integration test suite
 - [ ] Mock platform servers
