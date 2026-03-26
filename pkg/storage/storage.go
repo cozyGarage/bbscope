@@ -266,6 +266,83 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		IsBBP    bool
 		Variants map[string]existingVariant
 	}
+	
+	// Helper functions for creating change records
+	computeChangeCategoryForEntry := func(entry *UpsertEntry, variant *EntryVariant) string {
+		if variant.HasCategory && !strings.EqualFold(variant.Category, entry.Category) {
+			return variant.Category
+		}
+		return entry.Category
+	}
+	
+	computeChangeCategoryForExisting := func(entry *UpsertEntry, variant *existingVariant) string {
+		if variant.HasCategory && !strings.EqualFold(variant.Category, entry.Category) {
+			return variant.Category
+		}
+		return entry.Category
+	}
+	
+	computeChangeInScopeForEntry := func(entry *UpsertEntry, variant *EntryVariant) bool {
+		if variant.HasInScope && variant.InScope != entry.InScope {
+			return variant.InScope
+		}
+		return entry.InScope
+	}
+	
+	computeChangeInScopeForExisting := func(entry *UpsertEntry, variant *existingVariant) bool {
+		if variant.HasInScope && variant.InScope != entry.InScope {
+			return variant.InScope
+		}
+		return entry.InScope
+	}
+	
+	createChangeWithEntry := func(entry *UpsertEntry, variant *EntryVariant, changeType string) Change {
+		return Change{
+			OccurredAt:         now,
+			ProgramURL:         programURL,
+			Platform:           platform,
+			Handle:             handle,
+			TargetRaw:          entry.TargetRaw,
+			TargetNormalized:   entry.TargetNormalized,
+			TargetAINormalized: variant.AINormalized,
+			Category:           computeChangeCategoryForEntry(entry, variant),
+			InScope:            computeChangeInScopeForEntry(entry, variant),
+			IsBBP:              entry.IsBBP,
+			ChangeType:         changeType,
+		}
+	}
+	
+	createChangeWithExisting := func(entry *UpsertEntry, variant *existingVariant, changeType string) Change {
+		return Change{
+			OccurredAt:         now,
+			ProgramURL:         programURL,
+			Platform:           platform,
+			Handle:             handle,
+			TargetRaw:          entry.TargetRaw,
+			TargetNormalized:   entry.TargetNormalized,
+			TargetAINormalized: variant.Norm,
+			Category:           computeChangeCategoryForExisting(entry, variant),
+			InScope:            computeChangeInScopeForExisting(entry, variant),
+			IsBBP:              entry.IsBBP,
+			ChangeType:         changeType,
+		}
+	}
+	
+	needsVariantUpdate := func(existing *existingVariant, desired *EntryVariant) bool {
+		if desired.HasInScope != existing.HasInScope {
+			return true
+		}
+		if desired.HasInScope && existing.InScope != desired.InScope {
+			return true
+		}
+		if desired.HasCategory != existing.HasCategory {
+			return true
+		}
+		if desired.HasCategory && !strings.EqualFold(existing.Category, desired.Category) {
+			return true
+		}
+		return false
+	}
 
 	// 2. Load existing targets for this program
 	rows, err := d.sql.QueryContext(ctx, "SELECT id, target, category, in_scope, description, is_bbp FROM targets_raw WHERE program_id = $1", programID)
@@ -351,7 +428,17 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	}
 
 	// 4. Compare incoming data against existing state
-	var changes []Change
+	// Pre-allocate slices with estimated capacity to reduce allocations.
+	// These estimates are based on typical update patterns:
+	// - Changes (additions + updates): ~50% (25% new + 25% updates)
+	// - Unchanged (touches only): ~50%
+	const (
+		estimatedChangeRatio = 0.5  // ~50% of entries result in changes (25% new + 25% updates)
+		estimatedNewRatio    = 0.25 // ~25% are new entries
+		estimatedUpdateRatio = 0.25 // ~25% are updates
+	)
+	
+	changes := make([]Change, 0, int(float64(len(entries))*estimatedChangeRatio))
 	processedKeys := make(map[string]bool)
 	entryByKey := make(map[string]UpsertEntry)
 	targetIDs := make(map[string]int64, len(existingMap))
@@ -359,12 +446,12 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		targetIDs[key] = ex.ID
 	}
 
-	toAdd := []UpsertEntry{}
-	toUpdate := []struct {
+	toAdd := make([]UpsertEntry, 0, int(float64(len(entries))*estimatedNewRatio))
+	toUpdate := make([]struct {
 		entry UpsertEntry
 		id    int64
-	}{}
-	toTouch := []int64{}
+	}, 0, int(float64(len(entries))*estimatedUpdateRatio))
+	toTouch := make([]int64, 0, int(float64(len(entries))*(1.0-estimatedChangeRatio)))
 
 	for _, e := range entries {
 		key := identityKey(e.TargetRaw, e.Category)
@@ -553,10 +640,20 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		variant existingVariant
 	}
 
+	// Pre-allocate variant operation slices with estimated capacity.
+	// Typical entry has ~2 variants (normalized + AI-normalized).
+	// We estimate ~25% will be added, updated, or deleted.
+	const (
+		avgVariantsPerEntry    = 2
+		variantOperationRatio = 0.25 // 1/4 of variants will need operations
+	)
+	estimatedVariants := len(entryByKey) * avgVariantsPerEntry
+	variantOpCapacity := int(float64(estimatedVariants) * variantOperationRatio)
+	
 	var (
-		variantAdds    []variantAddOp
-		variantUpdates []variantUpdateOp
-		variantDeletes []variantDeleteOp
+		variantAdds    = make([]variantAddOp, 0, variantOpCapacity)
+		variantUpdates = make([]variantUpdateOp, 0, variantOpCapacity)
+		variantDeletes = make([]variantDeleteOp, 0, variantOpCapacity)
 	)
 
 	for key, entry := range entryByKey {
@@ -588,75 +685,22 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 					entry:    entry,
 					variant:  variant,
 				})
-				changeCategory := entry.Category
-				if variant.HasCategory && !strings.EqualFold(variant.Category, entry.Category) {
-					changeCategory = variant.Category
-				} else {
-					variant.HasCategory = false
-				}
-				changeInScope := entry.InScope
-				if variant.HasInScope {
-					changeInScope = variant.InScope
-				}
-				changes = append(changes, Change{
-					OccurredAt:         now,
-					ProgramURL:         programURL,
-					Platform:           platform,
-					Handle:             handle,
-					TargetRaw:          entry.TargetRaw,
-					TargetNormalized:   entry.TargetNormalized,
-					TargetAINormalized: variant.AINormalized,
-					Category:           changeCategory,
-					InScope:            changeInScope,
-					IsBBP:              entry.IsBBP,
-					ChangeType:         "added",
-				})
+				
+				changes = append(changes, createChangeWithEntry(&entry, &variant, "added"))
 			} else {
-				needsUpdate := false
-				if variant.HasInScope != ev.HasInScope {
-					needsUpdate = true
-				} else if variant.HasInScope && ev.InScope != variant.InScope {
-					needsUpdate = true
-				}
-				if variant.HasCategory != ev.HasCategory {
-					needsUpdate = true
-				} else if variant.HasCategory && !strings.EqualFold(ev.Category, variant.Category) {
-					needsUpdate = true
-				}
-				if !needsUpdate {
+				// Use helper function to check if update is needed
+				if !needsVariantUpdate(&ev, &variant) {
 					continue
 				}
+				
 				variantUpdates = append(variantUpdates, variantUpdateOp{
 					id:      ev.ID,
 					key:     key,
 					entry:   entry,
 					variant: variant,
 				})
-				changeCategory := entry.Category
-				if variant.HasCategory && !strings.EqualFold(variant.Category, entry.Category) {
-					changeCategory = variant.Category
-				} else {
-					variant.HasCategory = false
-				}
-				changeInScope := entry.InScope
-				if variant.HasInScope && variant.InScope != entry.InScope {
-					changeInScope = variant.InScope
-				} else {
-					variant.HasInScope = false
-				}
-				changes = append(changes, Change{
-					OccurredAt:         now,
-					ProgramURL:         programURL,
-					Platform:           platform,
-					Handle:             handle,
-					TargetRaw:          entry.TargetRaw,
-					TargetNormalized:   entry.TargetNormalized,
-					TargetAINormalized: variant.AINormalized,
-					Category:           changeCategory,
-					InScope:            changeInScope,
-					IsBBP:              entry.IsBBP,
-					ChangeType:         "updated",
-				})
+				
+				changes = append(changes, createChangeWithEntry(&entry, &variant, "updated"))
 			}
 		}
 
@@ -670,27 +714,8 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 				entry:   entry,
 				variant: ev,
 			})
-			changeCategory := entry.Category
-			if ev.HasCategory {
-				changeCategory = ev.Category
-			}
-			changeInScope := entry.InScope
-			if ev.HasInScope {
-				changeInScope = ev.InScope
-			}
-			changes = append(changes, Change{
-				OccurredAt:         now,
-				ProgramURL:         programURL,
-				Platform:           platform,
-				Handle:             handle,
-				TargetRaw:          entry.TargetRaw,
-				TargetNormalized:   entry.TargetNormalized,
-				TargetAINormalized: ev.Norm,
-				Category:           changeCategory,
-				InScope:            changeInScope,
-				IsBBP:              entry.IsBBP,
-				ChangeType:         "removed",
-			})
+			
+			changes = append(changes, createChangeWithExisting(&entry, &ev, "removed"))
 		}
 	}
 

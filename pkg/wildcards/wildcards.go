@@ -4,7 +4,6 @@ package wildcards
 
 import (
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -26,6 +25,7 @@ type Result struct {
 
 // BlacklistedSuffixes contains domain suffixes that are typically not useful
 // for subdomain enumeration (shared hosting, cloud providers, etc.).
+// Exported as a slice for backward compatibility and testing.
 var BlacklistedSuffixes = []string{
 	"amazonaws.com",
 	"amazoncognito.com",
@@ -52,6 +52,18 @@ var BlacklistedSuffixes = []string{
 	"windows.net",
 	"strapiapp.com",
 	"forgeblocks.com",
+}
+
+// blacklistedSuffixMap provides O(1) lookup for suffix checking.
+// Built from BlacklistedSuffixes on init.
+var blacklistedSuffixMap map[string]struct{}
+
+func init() {
+	// Initialize the map for fast lookups
+	blacklistedSuffixMap = make(map[string]struct{}, len(BlacklistedSuffixes))
+	for _, suffix := range BlacklistedSuffixes {
+		blacklistedSuffixMap[suffix] = struct{}{}
+	}
 }
 
 // NonDomainCategories contains scope categories that don't represent domains.
@@ -206,12 +218,34 @@ func WildcardHasPath(target string) bool {
 }
 
 // IsBlacklistedSuffix returns true if the host ends with a blacklisted suffix.
+// Uses a map for O(1) lookup performance instead of iterating through the slice.
 func IsBlacklistedSuffix(host string) bool {
-	for _, suffix := range BlacklistedSuffixes {
-		if strings.HasSuffix(host, "."+suffix) || host == suffix {
+	// Check for exact match first
+	if _, ok := blacklistedSuffixMap[host]; ok {
+		return true
+	}
+	
+	// Check for suffix match by building cumulative suffixes from right to left.
+	// For "a.b.c.amazonaws.com", this will check:
+	// "com", "amazonaws.com", "c.amazonaws.com", "b.c.amazonaws.com", etc.
+	labels := strings.Split(host, ".")
+	if len(labels) <= 1 {
+		return false
+	}
+
+	suffix := ""
+	for i := len(labels) - 1; i >= 0; i-- {
+		if suffix == "" {
+			suffix = labels[i]
+		} else {
+			suffix = labels[i] + "." + suffix
+		}
+
+		if _, ok := blacklistedSuffixMap[suffix]; ok {
 			return true
 		}
 	}
+	
 	return false
 }
 
@@ -236,13 +270,41 @@ func NormalizeForSubdomainTools(scope string) string {
 		processingStr = strings.TrimSuffix(processingStr, ".<tld>") + ".com"
 	}
 
-	processingStr = strings.ReplaceAll(processingStr, "*", "")
-	processingStr = strings.ReplaceAll(processingStr, ",", ".")
-	processingStr = strings.TrimPrefix(processingStr, ".")
-	processingStr = strings.ReplaceAll(processingStr, "(", "")
-	processingStr = strings.ReplaceAll(processingStr, ")", "")
-	processingStr = regexp.MustCompile(`\[.*?\]`).ReplaceAllString(processingStr, "")
-	processingStr = strings.Trim(processingStr, ". ")
-
-	return processingStr
+	// Use a strings.Builder to reduce allocations from multiple string operations
+	var builder strings.Builder
+	builder.Grow(len(processingStr)) // Pre-allocate capacity
+	
+	// Process characters in a single pass where possible
+	for i := 0; i < len(processingStr); i++ {
+		c := processingStr[i]
+		switch c {
+		case '*', '(', ')':
+			// Skip these characters
+			continue
+		case ',':
+			// Replace comma with dot
+			builder.WriteByte('.')
+		case '[':
+			// Skip bracket pairs - find matching closing bracket
+			j := i + 1
+			for j < len(processingStr) && processingStr[j] != ']' {
+				j++
+			}
+			if j < len(processingStr) {
+				// Found closing bracket - skip from '[' to ']' inclusive
+				i = j
+			} else {
+				// No closing bracket found; treat '[' as a normal character
+				// to preserve unclosed brackets and their content
+				builder.WriteByte('[')
+			}
+		default:
+			builder.WriteByte(c)
+		}
+	}
+	
+	result := builder.String()
+	result = strings.Trim(result, ". ")
+	
+	return result
 }
