@@ -225,23 +225,25 @@ func IsBlacklistedSuffix(host string) bool {
 		return true
 	}
 	
-	// Check for suffix match by working backwards through dots
-	// For "a.b.c.amazonaws.com", check "amazonaws.com", then "c.amazonaws.com", etc.
-	remaining := host
-	for {
-		dotIdx := strings.LastIndex(remaining, ".")
-		if dotIdx == -1 {
-			break
+	// Check for suffix match by building cumulative suffixes from right to left.
+	// For "a.b.c.amazonaws.com", this will check:
+	// "com", "amazonaws.com", "c.amazonaws.com", "b.c.amazonaws.com", etc.
+	labels := strings.Split(host, ".")
+	if len(labels) <= 1 {
+		return false
+	}
+
+	suffix := ""
+	for i := len(labels) - 1; i >= 0; i-- {
+		if suffix == "" {
+			suffix = labels[i]
+		} else {
+			suffix = labels[i] + "." + suffix
 		}
-		
-		// Check suffix after the dot
-		suffix := remaining[dotIdx+1:]
+
 		if _, ok := blacklistedSuffixMap[suffix]; ok {
 			return true
 		}
-		
-		// Move to the portion before the dot for next iteration
-		remaining = remaining[:dotIdx]
 	}
 	
 	return false
@@ -283,19 +285,18 @@ func NormalizeForSubdomainTools(scope string) string {
 			// Replace comma with dot
 			builder.WriteByte('.')
 		case '[':
-			// Skip until closing bracket without skipping the character after it.
+			// Skip bracket pairs - find matching closing bracket
 			j := i + 1
 			for j < len(processingStr) && processingStr[j] != ']' {
 				j++
 			}
 			if j < len(processingStr) {
-				// Position i on the closing bracket; the outer loop's i++
-				// will move to the first character after ']'.
+				// Found closing bracket - skip from '[' to ']' inclusive
 				i = j
 			} else {
-				// No closing bracket found; advance i to the last character
-				// so the outer loop's i++ will terminate the loop.
-				i = len(processingStr) - 1
+				// No closing bracket found; treat '[' as a normal character
+				// to preserve unclosed brackets and their content
+				builder.WriteByte('[')
 			}
 		default:
 			builder.WriteByte(c)

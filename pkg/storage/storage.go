@@ -430,12 +430,12 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	// 4. Compare incoming data against existing state
 	// Pre-allocate slices with estimated capacity to reduce allocations.
 	// These estimates are based on typical update patterns:
-	// - ~50% of entries result in changes (additions/updates/removals)
-	// - ~25% are new entries, ~25% are updates, rest are unchanged
+	// - Changes (additions + updates): ~50% (25% new + 25% updates)
+	// - Unchanged (touches only): ~50%
 	const (
-		estimatedChangeRatio = 0.5  // Expect about half of entries to have changes
-		estimatedNewRatio    = 0.25 // Expect about 1/4 to be new
-		estimatedUpdateRatio = 0.25 // Expect about 1/4 to be updates
+		estimatedChangeRatio = 0.5  // ~50% of entries result in changes (25% new + 25% updates)
+		estimatedNewRatio    = 0.25 // ~25% are new entries
+		estimatedUpdateRatio = 0.25 // ~25% are updates
 	)
 	
 	changes := make([]Change, 0, int(float64(len(entries))*estimatedChangeRatio))
@@ -686,11 +686,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 					variant:  variant,
 				})
 				
-				// Normalize variant flags before creating change record
-				if !variant.HasCategory || strings.EqualFold(variant.Category, entry.Category) {
-					variant.HasCategory = false
-				}
-				
 				changes = append(changes, createChangeWithEntry(&entry, &variant, "added"))
 			} else {
 				// Use helper function to check if update is needed
@@ -704,14 +699,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 					entry:   entry,
 					variant: variant,
 				})
-				
-				// Normalize variant flags before creating change record
-				if !variant.HasCategory || strings.EqualFold(variant.Category, entry.Category) {
-					variant.HasCategory = false
-				}
-				if !variant.HasInScope || variant.InScope == entry.InScope {
-					variant.HasInScope = false
-				}
 				
 				changes = append(changes, createChangeWithEntry(&entry, &variant, "updated"))
 			}
