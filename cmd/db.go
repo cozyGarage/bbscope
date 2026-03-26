@@ -63,7 +63,9 @@ var statsCmd = &cobra.Command{
 		fmt.Fprintln(w, " \t \t \t \t")
 		fmt.Fprintf(w, "TOTAL\t%d\t%d\t%d\t\n", totalPrograms, totalInScope, totalOutOfScope)
 
-		w.Flush()
+		if err := w.Flush(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error flushing output: %v\n", err)
+		}
 
 		return nil
 	},
