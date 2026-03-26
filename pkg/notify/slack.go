@@ -62,20 +62,20 @@ func (s *SlackNotifier) Send(ctx context.Context, event ChangeEvent) error {
 
 // slackMessage represents a Slack webhook message
 type slackMessage struct {
-	Username    string             `json:"username,omitempty"`
-	IconEmoji   string             `json:"icon_emoji,omitempty"`
-	Text        string             `json:"text,omitempty"`
-	Attachments []slackAttachment  `json:"attachments,omitempty"`
+	Username    string            `json:"username,omitempty"`
+	IconEmoji   string            `json:"icon_emoji,omitempty"`
+	Text        string            `json:"text,omitempty"`
+	Attachments []slackAttachment `json:"attachments,omitempty"`
 }
 
 // slackAttachment represents a Slack message attachment
 type slackAttachment struct {
-	Color  string        `json:"color,omitempty"`
-	Title  string        `json:"title,omitempty"`
-	Text   string        `json:"text,omitempty"`
-	Fields []slackField  `json:"fields,omitempty"`
-	Footer string        `json:"footer,omitempty"`
-	TS     int64         `json:"ts,omitempty"`
+	Color  string       `json:"color,omitempty"`
+	Title  string       `json:"title,omitempty"`
+	Text   string       `json:"text,omitempty"`
+	Fields []slackField `json:"fields,omitempty"`
+	Footer string       `json:"footer,omitempty"`
+	TS     int64        `json:"ts,omitempty"`
 }
 
 // slackField represents a field in a Slack attachment
@@ -115,7 +115,7 @@ func formatSlackMessage(event ChangeEvent, cfg *SlackConfig) slackMessage {
 	}
 
 	title := fmt.Sprintf("%s Scope Change on %s", emoji, event.Platform)
-	
+
 	attachment := slackAttachment{
 		Color: color,
 		Title: title,

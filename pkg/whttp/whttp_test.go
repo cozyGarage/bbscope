@@ -41,7 +41,7 @@ func TestIsSensitiveHeader(t *testing.T) {
 func TestGetDefaultClient(t *testing.T) {
 	client := GetDefaultClient()
 	if client == nil {
-		t.Error("GetDefaultClient() returned nil")
+		t.Fatal("GetDefaultClient() returned nil")
 	}
 	if client.RetryMax != 10 {
 		t.Errorf("RetryMax = %d, want 10", client.RetryMax)
@@ -53,7 +53,7 @@ func TestSendHTTPRequest_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("<html><head><title>Test Page</title></head><body>Hello</body></html>"))
+		_, _ = w.Write([]byte("<html><head><title>Test Page</title></head><body>Hello</body></html>"))
 	}))
 	defer server.Close()
 
@@ -115,7 +115,7 @@ func TestSendHTTPRequest_POST(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedMethod = r.Method
 		body := make([]byte, r.ContentLength)
-		r.Body.Read(body)
+		_, _ = r.Body.Read(body)
 		receivedBody = string(body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -147,7 +147,7 @@ func TestSendHTTPRequest_POST(t *testing.T) {
 func TestSendHTTPRequest_404(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Not Found"))
+		_, _ = w.Write([]byte("Not Found"))
 	}))
 	defer server.Close()
 

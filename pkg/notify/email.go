@@ -74,6 +74,7 @@ func (e *EmailNotifier) sendWithTLS(addr, message string) error {
 	// Create TLS config
 	tlsConfig := &tls.Config{
 		ServerName: e.config.SMTPHost,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	// Connect with TLS
@@ -88,23 +89,26 @@ func (e *EmailNotifier) sendWithTLS(addr, message string) error {
 	if err != nil {
 		return fmt.Errorf("SMTP client creation failed: %w", err)
 	}
-	defer client.Quit()
+	defer func() { _ = client.Quit() }()
 
 	// Authenticate if credentials provided
 	if e.config.Username != "" && e.config.Password != "" {
 		auth := smtp.PlainAuth("", e.config.Username, e.config.Password, e.config.SMTPHost)
-		if err := client.Auth(auth); err != nil {
+		err = client.Auth(auth)
+		if err != nil {
 			return fmt.Errorf("SMTP auth failed: %w", err)
 		}
 	}
 
 	// Set sender and recipients
-	if err := client.Mail(e.config.From); err != nil {
+	err = client.Mail(e.config.From)
+	if err != nil {
 		return fmt.Errorf("MAIL command failed: %w", err)
 	}
 
 	for _, to := range e.config.To {
-		if err := client.Rcpt(to); err != nil {
+		err = client.Rcpt(to)
+		if err != nil {
 			return fmt.Errorf("RCPT command failed for %s: %w", to, err)
 		}
 	}

@@ -13,15 +13,15 @@ type Notifier interface {
 
 // ChangeEvent represents a scope change notification
 type ChangeEvent struct {
-	Type         string    // "added", "removed", "updated"
-	Platform     string    // e.g., "hackerone"
-	ProgramURL   string
+	Type          string // "added", "removed", "updated"
+	Platform      string // e.g., "hackerone"
+	ProgramURL    string
 	ProgramHandle string
-	Target       string
-	Category     string
-	InScope      bool
-	IsBBP        bool
-	OccurredAt   time.Time
+	Target        string
+	Category      string
+	InScope       bool
+	IsBBP         bool
+	OccurredAt    time.Time
 }
 
 // Config holds notification configuration
