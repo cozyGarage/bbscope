@@ -158,7 +158,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 	}, nil)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to send login request: %v", err)
+		return "", fmt.Errorf("failed to send login request: %w", err)
 	}
 
 	if loginRes.StatusCode != 200 {

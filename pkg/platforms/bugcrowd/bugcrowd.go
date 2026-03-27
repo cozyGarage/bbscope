@@ -88,9 +88,10 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 	// Set proxy for custom client
 	if proxy != "" {
 		// Parse the proxy URL
-		proxyURL, err := url.Parse(proxy)
+		var proxyURL *url.URL
+		proxyURL, err = url.Parse(proxy)
 		if err != nil {
-			return "", fmt.Errorf("invalid proxy URL: %v", err)
+			return "", fmt.Errorf("invalid proxy URL: %w", err)
 		}
 
 		// Apply proxy settings directly to this client
@@ -104,7 +105,9 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		}
 
 		// Also update the global client for other requests
-		whttp.SetupProxy(proxy)
+		if err = whttp.SetupProxy(proxy); err != nil {
+			return "", err
+		}
 	}
 
 	firstRes, err := rateLimitedSendHTTPRequest(
@@ -162,7 +165,7 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 
 	otpCode, err := otp.GenerateTOTP(otpSecret, time.Now())
 	if err != nil {
-		return "", fmt.Errorf("failed to generate TOTP: %v", err)
+		return "", fmt.Errorf("failed to generate TOTP: %w", err)
 	}
 
 	if otpCode == "" {
@@ -316,7 +319,8 @@ func GetProgramScope(handle string, categories string, token string) (pData scop
 	pData.Url = "https://bugcrowd.com/" + strings.TrimPrefix(handle, "/")
 
 	if isEngagement {
-		getBriefVersionDocument, err := getEngagementBriefVersionDocument("/engagements/"+handle, token)
+		var getBriefVersionDocument string
+		getBriefVersionDocument, err = getEngagementBriefVersionDocument("/engagements/"+handle, token)
 		if err != nil {
 			return pData, err
 		}
@@ -476,8 +480,8 @@ func extractScopeFromTargetGroups(url string, categories string, token string, p
 	}
 
 	noScopeTable := true
-	for i, scopeTableURL := range gjson.Get(string(res.BodyString), "groups.#.targets_url").Array() {
-		inScope := gjson.Get(string(res.BodyString), fmt.Sprintf("groups.%d.in_scope", i)).Bool()
+	for i, scopeTableURL := range gjson.Get(res.BodyString, "groups.#.targets_url").Array() {
+		inScope := gjson.Get(res.BodyString, fmt.Sprintf("groups.%d.in_scope", i)).Bool()
 		err = extractScopeFromTargetTable(scopeTableURL.String(), categories, token, pData, inScope)
 		if err != nil {
 			return err
@@ -512,7 +516,7 @@ func extractScopeFromTargetTable(scopeTableURL string, categories string, token 
 		return errors.New(WAF_BANNED_ERROR)
 	}
 
-	json := string(res.BodyString)
+	json := res.BodyString
 	targetsCount := gjson.Get(json, "targets.#").Int()
 
 	// Get the list of categories to filter by.

@@ -168,7 +168,7 @@ func createDatabase(connectionString string) error {
 	}
 
 	// Validate database name to prevent SQL injection
-	if err := validateDatabaseName(dbName); err != nil {
+	if err = validateDatabaseName(dbName); err != nil {
 		return err
 	}
 
@@ -182,7 +182,7 @@ func createDatabase(connectionString string) error {
 	}
 	defer adminDB.Close()
 
-	if err := adminDB.Ping(); err != nil {
+	if err = adminDB.Ping(); err != nil {
 		return fmt.Errorf("pinging postgres database: %w", err)
 	}
 
@@ -219,7 +219,7 @@ func (d *DB) getOrCreateProgram(ctx context.Context, programURL, platform, handl
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var programID int64
 	row := tx.QueryRowContext(ctx, `
@@ -508,14 +508,14 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 		stmt, err := tx.PrepareContext(ctx, `UPDATE targets_raw SET description = $1, in_scope = $2, is_bbp = $3, last_seen_at = CURRENT_TIMESTAMP WHERE id = $4`)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, u := range toUpdate {
 			_, err := stmt.ExecContext(ctx, nullIfEmpty(u.entry.Description), boolToInt(u.entry.InScope), boolToInt(u.entry.IsBBP), u.id)
 			if err != nil {
 				stmt.Close()
-				tx.Rollback()
+				_ = tx.Rollback()
 				return nil, err
 			}
 		}
@@ -883,7 +883,7 @@ func (d *DB) GetActiveProgramCount(ctx context.Context, platform string) (int, e
 // and logs their removal as a single event, preventing spam from individual target removals.
 func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledProgramURLs []string) ([]Change, error) {
 	now := time.Now().UTC()
-	var changes []Change
+	changes := make([]Change, 0)
 
 	// 1. Create a set of polled URLs for efficient lookup.
 	polledURLSet := make(map[string]struct{}, len(polledProgramURLs))
@@ -1158,9 +1158,9 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 	if !opts.Since.IsZero() {
 		where += fmt.Sprintf(" AND COALESCE(a.last_seen_at, t.last_seen_at) >= $%d", argIdx)
 		args = append(args, opts.Since.UTC())
-		argIdx++
 	}
 
+	//nolint:gosec // where clause is built from hardcoded strings with parameterised values only
 	query := fmt.Sprintf(`
 		SELECT 
 			p.url,
@@ -1277,7 +1277,7 @@ func (d *DB) AddCustomTarget(ctx context.Context, target, category, programURL s
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var programID int64
 	programRow := tx.QueryRowContext(ctx, `
@@ -1290,7 +1290,7 @@ func (d *DB) AddCustomTarget(ctx context.Context, target, category, programURL s
 			disabled = 0
 		RETURNING id
 	`, platform, handle, programURL)
-	if err := programRow.Scan(&programID); err != nil {
+	if err = programRow.Scan(&programID); err != nil {
 		return false, fmt.Errorf("upserting custom program: %w", err)
 	}
 
@@ -1299,7 +1299,7 @@ func (d *DB) AddCustomTarget(ctx context.Context, target, category, programURL s
 	err = tx.QueryRowContext(ctx, `
 		SELECT 1 FROM targets_raw WHERE program_id = $1 AND category = $2 AND target = $3 LIMIT 1
 	`, programID, category, target).Scan(&exists)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("checking existing custom target: %w", err)
 	}
 	if err == nil {
