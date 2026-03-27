@@ -22,7 +22,9 @@ var pollBcCmd = &cobra.Command{
 		otpSecret := credentials.Get("bugcrowd.otpsecret")
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
-			whttp.SetupProxy(proxy)
+			if err := whttp.SetupProxy(proxy); err != nil {
+				return err
+			}
 		}
 
 		// Validate auth: require either token OR (email+password+otp-secret)
@@ -45,7 +47,7 @@ func init() {
 	pollBcCmd.Flags().StringP("email", "E", "", "Bugcrowd login email")
 	pollBcCmd.Flags().StringP("password", "P", "", "Bugcrowd login password")
 	pollBcCmd.Flags().StringP("otp-secret", "O", "", "Bugcrowd TOTP secret (base32)")
-	viper.BindPFlag("bugcrowd.email", pollBcCmd.Flags().Lookup("email"))
-	viper.BindPFlag("bugcrowd.password", pollBcCmd.Flags().Lookup("password"))
-	viper.BindPFlag("bugcrowd.otpsecret", pollBcCmd.Flags().Lookup("otp-secret"))
+	_ = viper.BindPFlag("bugcrowd.email", pollBcCmd.Flags().Lookup("email"))
+	_ = viper.BindPFlag("bugcrowd.password", pollBcCmd.Flags().Lookup("password"))
+	_ = viper.BindPFlag("bugcrowd.otpsecret", pollBcCmd.Flags().Lookup("otp-secret"))
 }

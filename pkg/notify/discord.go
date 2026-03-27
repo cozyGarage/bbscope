@@ -69,12 +69,12 @@ type discordMessage struct {
 
 // discordEmbed represents a Discord embed
 type discordEmbed struct {
-	Title       string          `json:"title,omitempty"`
-	Description string          `json:"description,omitempty"`
-	Color       int             `json:"color,omitempty"`
-	Fields      []discordField  `json:"fields,omitempty"`
-	Footer      *discordFooter  `json:"footer,omitempty"`
-	Timestamp   string          `json:"timestamp,omitempty"`
+	Title       string         `json:"title,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Color       int            `json:"color,omitempty"`
+	Fields      []discordField `json:"fields,omitempty"`
+	Footer      *discordFooter `json:"footer,omitempty"`
+	Timestamp   string         `json:"timestamp,omitempty"`
 }
 
 // discordField represents a field in a Discord embed

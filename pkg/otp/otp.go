@@ -2,7 +2,7 @@ package otp
 
 import (
 	"crypto/hmac"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // sha1 is required by TOTP (RFC 4226)
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
@@ -24,7 +24,7 @@ func GenerateTOTP(secret string, t time.Time) (string, error) {
 	if digits <= 0 {
 		digits = 6
 	}
-	step := uint64(t.Unix() / 30)
+	step := uint64(t.Unix() / 30) //nolint:gosec // safe conversion for TOTP time step
 	var msg [8]byte
 	binary.BigEndian.PutUint64(msg[:], step)
 	mac := hmac.New(sha1.New, key)
@@ -70,7 +70,7 @@ func parseTOTPSecret(s string) ([]byte, int, error) {
 		sec := q.Get("secret")
 		digits := 6
 		if d := q.Get("digits"); d != "" {
-			if v, err := strconv.Atoi(d); err == nil {
+			if v, err := strconv.Atoi(d); err == nil { //nolint:govet // intentional new scope
 				digits = v
 			}
 		}

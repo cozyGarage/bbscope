@@ -47,7 +47,7 @@ Examples:
 		// Write PID file if requested
 		if pidFile != "" {
 			pid := os.Getpid()
-			if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", pid)), 0644); err != nil {
+			if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", pid)), 0600); err != nil {
 				return fmt.Errorf("failed to write PID file: %w", err)
 			}
 			defer os.Remove(pidFile)
@@ -143,10 +143,7 @@ func parsePlatforms(input string) []string {
 		return nil
 	}
 	
-	var platforms []string
-	for _, p := range splitAndTrim(input, ",") {
-		platforms = append(platforms, p)
-	}
+	platforms := splitAndTrim(input, ",")
 	return platforms
 }
 

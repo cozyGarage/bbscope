@@ -140,7 +140,9 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 
 func login(email string, password, otpSecret, proxy string) (string, error) {
 	if proxy != "" {
-		whttp.SetupProxy(proxy)
+		if err := whttp.SetupProxy(proxy); err != nil {
+			return "", fmt.Errorf("failed to setup proxy: %w", err)
+		}
 	}
 
 	loginURL := "https://api.yeswehack.com/login"
@@ -156,7 +158,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 	}, nil)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to send login request: %v", err)
+		return "", fmt.Errorf("failed to send login request: %w", err)
 	}
 
 	if loginRes.StatusCode != 200 {

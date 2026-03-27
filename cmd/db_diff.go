@@ -231,5 +231,7 @@ func init() {
 	diffCmd.Flags().Bool("only-removed", false, "Show only removals")
 	diffCmd.Flags().String("format", "text", "Output format: text, json, csv")
 
-	diffCmd.MarkFlagRequired("from")
+	if err := diffCmd.MarkFlagRequired("from"); err != nil {
+		panic(err)
+	}
 }
