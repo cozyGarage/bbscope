@@ -133,7 +133,7 @@ Sources:
 			fmt.Fprintf(w, "%s\t%s\t%s\n", key, source, status)
 		}
 		if err := w.Flush(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error flushing output: %v\n", err)
+			return fmt.Errorf("flush output: %w", err)
 		}
 		return nil
 	},

@@ -1,6 +1,7 @@
 package whttp
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -114,8 +115,10 @@ func TestSendHTTPRequest_POST(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedMethod = r.Method
-		body := make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
 		receivedBody = string(body)
 		w.WriteHeader(http.StatusOK)
 	}))
