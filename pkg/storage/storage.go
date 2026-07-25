@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
@@ -266,7 +267,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		IsBBP    bool
 		Variants map[string]existingVariant
 	}
-	
+
 	// Helper functions for creating change records
 	computeChangeCategoryForEntry := func(entry *UpsertEntry, variant *EntryVariant) string {
 		if variant.HasCategory && !strings.EqualFold(variant.Category, entry.Category) {
@@ -274,28 +275,28 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 		return entry.Category
 	}
-	
+
 	computeChangeCategoryForExisting := func(entry *UpsertEntry, variant *existingVariant) string {
 		if variant.HasCategory && !strings.EqualFold(variant.Category, entry.Category) {
 			return variant.Category
 		}
 		return entry.Category
 	}
-	
+
 	computeChangeInScopeForEntry := func(entry *UpsertEntry, variant *EntryVariant) bool {
 		if variant.HasInScope && variant.InScope != entry.InScope {
 			return variant.InScope
 		}
 		return entry.InScope
 	}
-	
+
 	computeChangeInScopeForExisting := func(entry *UpsertEntry, variant *existingVariant) bool {
 		if variant.HasInScope && variant.InScope != entry.InScope {
 			return variant.InScope
 		}
 		return entry.InScope
 	}
-	
+
 	createChangeWithEntry := func(entry *UpsertEntry, variant *EntryVariant, changeType string) Change {
 		return Change{
 			OccurredAt:         now,
@@ -311,7 +312,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			ChangeType:         changeType,
 		}
 	}
-	
+
 	createChangeWithExisting := func(entry *UpsertEntry, variant *existingVariant, changeType string) Change {
 		return Change{
 			OccurredAt:         now,
@@ -327,7 +328,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			ChangeType:         changeType,
 		}
 	}
-	
+
 	needsVariantUpdate := func(existing *existingVariant, desired *EntryVariant) bool {
 		if desired.HasInScope != existing.HasInScope {
 			return true
@@ -437,7 +438,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		estimatedNewRatio    = 0.25 // ~25% are new entries
 		estimatedUpdateRatio = 0.25 // ~25% are updates
 	)
-	
+
 	changes := make([]Change, 0, int(float64(len(entries))*estimatedChangeRatio))
 	processedKeys := make(map[string]bool)
 	entryByKey := make(map[string]UpsertEntry)
@@ -644,12 +645,12 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	// Typical entry has ~2 variants (normalized + AI-normalized).
 	// We estimate ~25% will be added, updated, or deleted.
 	const (
-		avgVariantsPerEntry    = 2
+		avgVariantsPerEntry   = 2
 		variantOperationRatio = 0.25 // 1/4 of variants will need operations
 	)
 	estimatedVariants := len(entryByKey) * avgVariantsPerEntry
 	variantOpCapacity := int(float64(estimatedVariants) * variantOperationRatio)
-	
+
 	var (
 		variantAdds    = make([]variantAddOp, 0, variantOpCapacity)
 		variantUpdates = make([]variantUpdateOp, 0, variantOpCapacity)
@@ -685,21 +686,21 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 					entry:    entry,
 					variant:  variant,
 				})
-				
+
 				changes = append(changes, createChangeWithEntry(&entry, &variant, "added"))
 			} else {
 				// Use helper function to check if update is needed
 				if !needsVariantUpdate(&ev, &variant) {
 					continue
 				}
-				
+
 				variantUpdates = append(variantUpdates, variantUpdateOp{
 					id:      ev.ID,
 					key:     key,
 					entry:   entry,
 					variant: variant,
 				})
-				
+
 				changes = append(changes, createChangeWithEntry(&entry, &variant, "updated"))
 			}
 		}
@@ -714,7 +715,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 				entry:   entry,
 				variant: ev,
 			})
-			
+
 			changes = append(changes, createChangeWithExisting(&entry, &ev, "removed"))
 		}
 	}
@@ -734,7 +735,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			RETURNING id
 		`)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, add := range variantAdds {
@@ -753,7 +754,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			var id int64
 			if err := stmt.QueryRowContext(ctx, add.targetID, add.variant.AINormalized, catVal, inScopeVal).Scan(&id); err != nil {
 				stmt.Close()
-				tx.Rollback()
+				_ = tx.Rollback()
 				return nil, err
 			}
 			if existing := existingMap[add.key]; existing != nil {
@@ -780,7 +781,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 		stmt, err := tx.PrepareContext(ctx, `UPDATE targets_ai_enhanced SET target_ai_normalized = $1, category = $2, in_scope = $3, last_seen_at = CURRENT_TIMESTAMP WHERE id = $4`)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, upd := range variantUpdates {
@@ -798,7 +799,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			}
 			if _, err := stmt.ExecContext(ctx, upd.variant.AINormalized, catVal, inScopeVal, upd.id); err != nil {
 				stmt.Close()
-				tx.Rollback()
+				_ = tx.Rollback()
 				return nil, err
 			}
 			if existing := existingMap[upd.key]; existing != nil {
@@ -825,13 +826,13 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 		stmt, err := tx.PrepareContext(ctx, `DELETE FROM targets_ai_enhanced WHERE id = $1`)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, del := range variantDeletes {
 			if _, err := stmt.ExecContext(ctx, del.id); err != nil {
 				stmt.Close()
-				tx.Rollback()
+				_ = tx.Rollback()
 				return nil, err
 			}
 			if existing := existingMap[del.key]; existing != nil {
@@ -957,13 +958,13 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 
 		// Mark the program as disabled
 		if _, err := tx.ExecContext(ctx, `UPDATE programs SET disabled = 1 WHERE id = $1`, p.ID); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return nil, fmt.Errorf("disabling program %d: %w", p.ID, err)
 		}
 
 		// Delete associated targets
 		if _, err := tx.ExecContext(ctx, `DELETE FROM targets_raw WHERE program_id = $1`, p.ID); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return nil, fmt.Errorf("deleting targets for program %d: %w", p.ID, err)
 		}
 
@@ -999,7 +1000,7 @@ func (d *DB) LogChanges(ctx context.Context, changes []Change) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO scope_changes(occurred_at, program_url, platform, handle, target_normalized, target_raw, target_ai_normalized, category, in_scope, is_bbp, change_type) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`)
 	if err != nil {
@@ -1377,14 +1378,14 @@ func (d *DB) ListRecentChanges(ctx context.Context, limit int) ([]Change, error)
 func (d *DB) GetChangesBetween(ctx context.Context, from, to time.Time, programURL string) ([]Change, error) {
 	query := "SELECT occurred_at, program_url, platform, handle, target_normalized, target_raw, target_ai_normalized, category, in_scope, is_bbp, change_type FROM scope_changes WHERE occurred_at >= $1 AND occurred_at <= $2"
 	args := []interface{}{from.UTC(), to.UTC()}
-	
+
 	if programURL != "" {
 		query += " AND program_url LIKE $3"
 		args = append(args, "%"+programURL+"%")
 	}
-	
+
 	query += " ORDER BY occurred_at ASC"
-	
+
 	rows, err := d.sql.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

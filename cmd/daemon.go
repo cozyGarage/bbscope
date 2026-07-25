@@ -129,10 +129,10 @@ Examples:
 func runScheduledPoll(ctx context.Context, cmd *cobra.Command, db *storage.DB, platforms []string, useDB, useAI bool) error {
 	// This will be refactored to use shared polling logic from poll.go
 	// For now, it's a placeholder that calls the poll command
-	
+
 	// TODO: Extract common polling logic from poll.go into a shared function
 	// that can be used by both poll and daemon commands
-	
+
 	utils.Log.Info("Polling logic to be implemented")
 	return nil
 }
@@ -142,7 +142,7 @@ func parsePlatforms(input string) []string {
 	if input == "" {
 		return nil
 	}
-	
+
 	platforms := splitAndTrim(input, ",")
 	return platforms
 }
@@ -165,7 +165,7 @@ func splitString(s, delimiter string) []string {
 	if delimiter == "" {
 		return []string{s}
 	}
-	
+
 	var result []string
 	start := 0
 	for i := 0; i < len(s); i++ {
@@ -181,15 +181,15 @@ func splitString(s, delimiter string) []string {
 func trimSpace(s string) string {
 	start := 0
 	end := len(s)
-	
+
 	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n') {
 		start++
 	}
-	
+
 	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n') {
 		end--
 	}
-	
+
 	return s[start:end]
 }
 

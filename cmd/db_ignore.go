@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 

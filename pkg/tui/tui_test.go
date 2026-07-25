@@ -7,15 +7,15 @@ import (
 func TestNewModel(t *testing.T) {
 	// Test that NewModel creates a valid model
 	model := NewModel(nil)
-	
+
 	if model.view != ViewDashboard {
 		t.Errorf("Expected initial view to be Dashboard, got %v", model.view)
 	}
-	
+
 	if model.quitting {
 		t.Error("Expected quitting to be false initially")
 	}
-	
+
 	if model.cancel == nil {
 		t.Error("Expected cancel function to be initialized")
 	}
@@ -44,7 +44,7 @@ func TestTruncate(t *testing.T) {
 
 func TestNewStyles(t *testing.T) {
 	styles := newStyles()
-	
+
 	// Just verify that styles are created without panicking
 	if styles.Title.GetBold() != true {
 		t.Error("Expected Title style to be bold")

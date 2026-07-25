@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	devplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/dev"
 )

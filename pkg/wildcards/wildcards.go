@@ -224,7 +224,7 @@ func IsBlacklistedSuffix(host string) bool {
 	if _, ok := blacklistedSuffixMap[host]; ok {
 		return true
 	}
-	
+
 	// Check for suffix match by building cumulative suffixes from right to left.
 	// For "a.b.c.amazonaws.com", this will check:
 	// "com", "amazonaws.com", "c.amazonaws.com", "b.c.amazonaws.com", etc.
@@ -245,7 +245,7 @@ func IsBlacklistedSuffix(host string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -273,7 +273,7 @@ func NormalizeForSubdomainTools(scope string) string {
 	// Use a strings.Builder to reduce allocations from multiple string operations
 	var builder strings.Builder
 	builder.Grow(len(processingStr)) // Pre-allocate capacity
-	
+
 	// Process characters in a single pass where possible
 	for i := 0; i < len(processingStr); i++ {
 		c := processingStr[i]
@@ -302,9 +302,9 @@ func NormalizeForSubdomainTools(scope string) string {
 			builder.WriteByte(c)
 		}
 	}
-	
+
 	result := builder.String()
 	result = strings.Trim(result, ". ")
-	
+
 	return result
 }

@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
-	"github.com/tidwall/gjson"
 )
 
 // Poller adapts existing H1 code to the generic PlatformPoller interface.

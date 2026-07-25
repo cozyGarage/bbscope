@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
@@ -25,7 +26,9 @@ var pollItCmd = &cobra.Command{
 
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
-			whttp.SetupProxy(proxy)
+			if err := whttp.SetupProxy(proxy); err != nil {
+				return err
+			}
 		}
 
 		poller := itplatform.NewPoller()
@@ -40,5 +43,5 @@ var pollItCmd = &cobra.Command{
 func init() {
 	pollCmd.AddCommand(pollItCmd)
 	pollItCmd.Flags().StringP("token", "t", "", "Intigriti authorization token (Bearer)")
-	viper.BindPFlag("intigriti.token", pollItCmd.Flags().Lookup("token"))
+	_ = viper.BindPFlag("intigriti.token", pollItCmd.Flags().Lookup("token"))
 }

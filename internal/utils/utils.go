@@ -141,14 +141,22 @@ func (e *LogEntry) log(level slog.Level, msg string) {
 	slog.Log(context.Background(), level, msg, args...)
 }
 
-func (e *LogEntry) Info(args ...any)                  { e.log(slog.LevelInfo, formatArgs(args...)) }
-func (e *LogEntry) Infof(format string, args ...any)  { e.log(slog.LevelInfo, fmt.Sprintf(format, args...)) }
-func (e *LogEntry) Debug(args ...any)                 { e.log(slog.LevelDebug, formatArgs(args...)) }
-func (e *LogEntry) Debugf(format string, args ...any) { e.log(slog.LevelDebug, fmt.Sprintf(format, args...)) }
-func (e *LogEntry) Warn(args ...any)                  { e.log(slog.LevelWarn, formatArgs(args...)) }
-func (e *LogEntry) Warnf(format string, args ...any)  { e.log(slog.LevelWarn, fmt.Sprintf(format, args...)) }
-func (e *LogEntry) Error(args ...any)                 { e.log(slog.LevelError, formatArgs(args...)) }
-func (e *LogEntry) Errorf(format string, args ...any) { e.log(slog.LevelError, fmt.Sprintf(format, args...)) }
+func (e *LogEntry) Info(args ...any) { e.log(slog.LevelInfo, formatArgs(args...)) }
+func (e *LogEntry) Infof(format string, args ...any) {
+	e.log(slog.LevelInfo, fmt.Sprintf(format, args...))
+}
+func (e *LogEntry) Debug(args ...any) { e.log(slog.LevelDebug, formatArgs(args...)) }
+func (e *LogEntry) Debugf(format string, args ...any) {
+	e.log(slog.LevelDebug, fmt.Sprintf(format, args...))
+}
+func (e *LogEntry) Warn(args ...any) { e.log(slog.LevelWarn, formatArgs(args...)) }
+func (e *LogEntry) Warnf(format string, args ...any) {
+	e.log(slog.LevelWarn, fmt.Sprintf(format, args...))
+}
+func (e *LogEntry) Error(args ...any) { e.log(slog.LevelError, formatArgs(args...)) }
+func (e *LogEntry) Errorf(format string, args ...any) {
+	e.log(slog.LevelError, fmt.Sprintf(format, args...))
+}
 
 // Helper function for formatting variadic args
 func formatArgs(args ...any) string {

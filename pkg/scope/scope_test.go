@@ -17,22 +17,22 @@ func TestNormalizeCategory(t *testing.T) {
 		{"web to url", "web", "url"},
 		{"api to url", "api", "url"},
 		{"ip_address to url", "ip_address", "url"},
-		
+
 		// CIDR
 		{"cidr", "cidr", "cidr"},
 		{"iprange to cidr", "iprange", "cidr"},
-		
+
 		// Mobile
 		{"android", "android", "android"},
 		{"google_play_app_id to android", "google_play_app_id", "android"},
 		{"ios", "ios", "ios"},
 		{"apple to ios", "apple", "ios"},
 		{"apple_store_app_id to ios", "apple_store_app_id", "ios"},
-		
+
 		// Case insensitive
 		{"uppercase WILDCARD", "WILDCARD", "wildcard"},
 		{"mixed case Url", "Url", "url"},
-		
+
 		// Unknown categories
 		{"unknown category", "unknown_thing", "unknown thing"},
 		{"empty", "", ""},
@@ -50,11 +50,11 @@ func TestNormalizeCategory(t *testing.T) {
 
 func TestUnifiedCategories(t *testing.T) {
 	categories := UnifiedCategories()
-	
+
 	if len(categories) == 0 {
 		t.Error("UnifiedCategories() returned empty list")
 	}
-	
+
 	// Check that some expected categories exist
 	expectedCategories := []string{"wildcard", "url", "cidr", "android", "ios"}
 	for _, expected := range expectedCategories {
@@ -69,7 +69,7 @@ func TestUnifiedCategories(t *testing.T) {
 			t.Errorf("UnifiedCategories() missing expected category %q", expected)
 		}
 	}
-	
+
 	// Check that list is sorted
 	for i := 1; i < len(categories); i++ {
 		if categories[i-1] > categories[i] {
@@ -153,23 +153,23 @@ func TestGetAllStringsForCategories(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := GetAllStringsForCategories(tt.input)
-			
+
 			if tt.wantNil {
 				if got != nil {
 					t.Errorf("GetAllStringsForCategories(%q) = %v, want nil", tt.input, got)
 				}
 				return
 			}
-			
+
 			if got == nil {
 				t.Errorf("GetAllStringsForCategories(%q) = nil, want non-nil", tt.input)
 				return
 			}
-			
+
 			if tt.wantLen > 0 && len(got) != tt.wantLen {
 				t.Errorf("GetAllStringsForCategories(%q) len = %d, want %d", tt.input, len(got), tt.wantLen)
 			}
-			
+
 			for _, expected := range tt.contains {
 				found := false
 				for _, v := range got {
@@ -193,7 +193,7 @@ func TestCreateLine(t *testing.T) {
 		Category:    "wildcard",
 	}
 	url := "https://hackerone.com/example"
-	
+
 	tests := []struct {
 		name      string
 		flags     string

@@ -35,7 +35,7 @@ func (t *TelegramNotifier) Send(ctx context.Context, event ChangeEvent) error {
 	}
 
 	message := formatTelegramMessage(event)
-	
+
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.config.BotToken)
 
 	payload := telegramMessage{
@@ -97,11 +97,11 @@ func formatTelegramMessage(event ChangeEvent) string {
 	// Use HTML formatting
 	message := fmt.Sprintf(
 		"%s <b>Scope Change on %s</b>\n\n"+
-		"<b>Type:</b> %s\n"+
-		"<b>Category:</b> %s\n"+
-		"<b>Target:</b> <code>%s</code>\n"+
-		"<b>Program:</b> <a href=\"%s\">%s</a>\n"+
-		"<b>Status:</b> %s In-Scope • %s Bounty\n",
+			"<b>Type:</b> %s\n"+
+			"<b>Category:</b> %s\n"+
+			"<b>Target:</b> <code>%s</code>\n"+
+			"<b>Program:</b> <a href=\"%s\">%s</a>\n"+
+			"<b>Status:</b> %s In-Scope • %s Bounty\n",
 		emoji,
 		event.Platform,
 		event.Type,

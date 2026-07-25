@@ -176,7 +176,7 @@ func SetupProxy(proxyURL string) error {
 
 	parsedURL, err := url.Parse(proxyURL)
 	if err != nil {
-		return fmt.Errorf("invalid proxy URL: %v", err)
+		return fmt.Errorf("invalid proxy URL: %w", err)
 	}
 
 	client := GetDefaultClient()

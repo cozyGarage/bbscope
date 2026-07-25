@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
@@ -50,8 +51,8 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	// Fetch all entries
 	opts := storage.ListOptions{
-		Platform:   platform,
-		IncludeOOS: true, // Export everything by default
+		Platform:       platform,
+		IncludeOOS:     true, // Export everything by default
 		IncludeIgnored: false,
 	}
 

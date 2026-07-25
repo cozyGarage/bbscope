@@ -9,15 +9,15 @@ import (
 
 func TestNewPoller(t *testing.T) {
 	p := NewPoller()
-	
+
 	if p == nil {
 		t.Fatal("NewPoller() returned nil")
 	}
-	
+
 	if p.urlToID == nil {
 		t.Error("urlToID map should be initialized")
 	}
-	
+
 	if p.handleToURL == nil {
 		t.Error("handleToURL map should be initialized")
 	}
@@ -74,13 +74,13 @@ func TestPollerImplementsInterface(t *testing.T) {
 
 func TestPollerMapsInitialization(t *testing.T) {
 	p := NewPoller()
-	
+
 	// Test that maps are writable
 	p.urlToID["test-url"] = "test-id"
 	if p.urlToID["test-url"] != "test-id" {
 		t.Error("urlToID map should be writable")
 	}
-	
+
 	p.handleToURL["test-handle"] = "test-url"
 	if p.handleToURL["test-handle"] != "test-url" {
 		t.Error("handleToURL map should be writable")
