@@ -6,10 +6,12 @@ var getCIDRsCmd = &cobra.Command{
 	Use:   "cidrs",
 	Short: "Get all targets that are CIDR ranges or IP ranges",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return getAndPrintTargets("cidrs", false)
+		platform, _ := cmd.Flags().GetString("platform")
+		return getAndPrintTargets("cidrs", platform, false)
 	},
 }
 
 func init() {
+	getCIDRsCmd.Flags().String("platform", "all", "Limit results to a specific platform (e.g. h1, bugcrowd, intigriti).")
 	getCmd.AddCommand(getCIDRsCmd)
 }

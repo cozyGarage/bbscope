@@ -6,10 +6,12 @@ var getIPsCmd = &cobra.Command{
 	Use:   "ips",
 	Short: "Get all targets that are IP addresses",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return getAndPrintTargets("ips", false)
+		platform, _ := cmd.Flags().GetString("platform")
+		return getAndPrintTargets("ips", platform, false)
 	},
 }
 
 func init() {
+	getIPsCmd.Flags().String("platform", "all", "Limit results to a specific platform (e.g. h1, bugcrowd, intigriti).")
 	getCmd.AddCommand(getIPsCmd)
 }

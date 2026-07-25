@@ -6,10 +6,12 @@ var getURLsCmd = &cobra.Command{
 	Use:   "urls",
 	Short: "Get all targets that are URLs",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return getAndPrintTargets("urls", false)
+		platform, _ := cmd.Flags().GetString("platform")
+		return getAndPrintTargets("urls", platform, false)
 	},
 }
 
 func init() {
+	getURLsCmd.Flags().String("platform", "all", "Limit results to a specific platform (e.g. h1, bugcrowd, intigriti).")
 	getCmd.AddCommand(getURLsCmd)
 }
