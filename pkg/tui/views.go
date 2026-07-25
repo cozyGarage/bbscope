@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
@@ -53,7 +54,7 @@ func loadStatsCmd(db *storage.DB) tea.Cmd {
 func loadRecentChangesCmd(db *storage.DB) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		
+
 		changes, err := db.ListRecentChanges(ctx, 10)
 		if err != nil {
 			return errMsg(fmt.Errorf("failed to load changes: %w", err))
@@ -81,10 +82,10 @@ func (m Model) renderDashboard() string {
 	}
 
 	title := m.styles.Title.Render("🎯 bbscope Dashboard")
-	
+
 	// Stats section
 	statsBox := m.renderStats()
-	
+
 	// Recent changes section
 	changesBox := m.renderRecentChanges()
 
@@ -117,9 +118,9 @@ func (m Model) renderStats() string {
 		m.styles.StatValue.Render(fmt.Sprintf("%d", m.stats.ChangesCount)),
 	)
 
-	stats := lipgloss.JoinHorizontal(lipgloss.Top, 
-		programStat, "  │  ", 
-		targetStat, "  │  ", 
+	stats := lipgloss.JoinHorizontal(lipgloss.Top,
+		programStat, "  │  ",
+		targetStat, "  │  ",
 		changesStat,
 	)
 
@@ -129,12 +130,12 @@ func (m Model) renderStats() string {
 // renderRecentChanges renders the recent changes section
 func (m Model) renderRecentChanges() string {
 	title := m.styles.Subtitle.Render("🔔 Recent Changes")
-	
+
 	if len(m.recentChanges) == 0 {
 		return title + "\n" + m.styles.Change.Render("No recent changes")
 	}
 
-	var changes []string
+	changes := make([]string, 0, len(m.recentChanges))
 	for i, change := range m.recentChanges {
 		if i >= 5 { // Limit to 5 changes
 			break
@@ -142,7 +143,7 @@ func (m Model) renderRecentChanges() string {
 
 		var prefix string
 		var style lipgloss.Style
-		
+
 		switch change.ChangeType {
 		case "added":
 			prefix = "+"
@@ -188,7 +189,7 @@ func (m Model) renderPolling() string {
 // renderSearch renders the search interface
 func (m Model) renderSearch() string {
 	title := m.styles.Title.Render("🔍 Search")
-	
+
 	content := m.styles.Subtitle.Render("Search feature coming soon...")
 
 	full := lipgloss.JoinVertical(lipgloss.Left, title, "", content)
@@ -230,7 +231,7 @@ func truncate(s string, maxLen int) string {
 
 func formatTimeAgo(t time.Time) string {
 	duration := time.Since(t)
-	
+
 	if duration < time.Minute {
 		return "just now"
 	} else if duration < time.Hour {

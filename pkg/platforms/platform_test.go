@@ -7,15 +7,15 @@ import (
 
 func TestPollOptionsDefaults(t *testing.T) {
 	opts := PollOptions{}
-	
+
 	if opts.BountyOnly != false {
 		t.Errorf("BountyOnly should default to false, got %v", opts.BountyOnly)
 	}
-	
+
 	if opts.PrivateOnly != false {
 		t.Errorf("PrivateOnly should default to false, got %v", opts.PrivateOnly)
 	}
-	
+
 	if opts.Categories != "" {
 		t.Errorf("Categories should default to empty string, got %v", opts.Categories)
 	}
@@ -23,27 +23,27 @@ func TestPollOptionsDefaults(t *testing.T) {
 
 func TestAuthConfigDefaults(t *testing.T) {
 	cfg := AuthConfig{}
-	
+
 	if cfg.Username != "" {
 		t.Errorf("Username should default to empty string, got %v", cfg.Username)
 	}
-	
+
 	if cfg.Email != "" {
 		t.Errorf("Email should default to empty string, got %v", cfg.Email)
 	}
-	
+
 	if cfg.Password != "" {
 		t.Errorf("Password should default to empty string, got %v", cfg.Password)
 	}
-	
+
 	if cfg.Token != "" {
 		t.Errorf("Token should default to empty string, got %v", cfg.Token)
 	}
-	
+
 	if cfg.OtpSecret != "" {
 		t.Errorf("OtpSecret should default to empty string, got %v", cfg.OtpSecret)
 	}
-	
+
 	if cfg.Proxy != "" {
 		t.Errorf("Proxy should default to empty string, got %v", cfg.Proxy)
 	}
@@ -83,12 +83,12 @@ func (m *MockPoller) FetchProgramScope(ctx context.Context, handle string, opts 
 
 func TestMockPollerInterface(t *testing.T) {
 	mock := NewMockPoller("test")
-	
+
 	// Test Name()
 	if mock.Name() != "test" {
 		t.Errorf("Name() = %v, want %v", mock.Name(), "test")
 	}
-	
+
 	// Test Authenticate()
 	ctx := context.Background()
 	err := mock.Authenticate(ctx, AuthConfig{Username: "user", Token: "token"})
@@ -98,7 +98,7 @@ func TestMockPollerInterface(t *testing.T) {
 	if !mock.authCalled {
 		t.Error("Authenticate() was not called")
 	}
-	
+
 	// Test ListProgramHandles()
 	handles, err := mock.ListProgramHandles(ctx, PollOptions{})
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
@@ -66,7 +66,6 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--to date must be after --from date")
 	}
 
-
 	// Open database
 	dbURL, err := GetDBConnectionString()
 	if err != nil {
@@ -87,7 +86,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	}
 
 	// Filter by type if requested
-	var filtered []storage.Change
+	filtered := make([]storage.Change, 0, len(changes))
 	for _, change := range changes {
 		if onlyAdded && change.ChangeType != "added" {
 			continue
@@ -106,20 +105,21 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	// Output based on format
 	switch format {
 	case "json":
-		return outputDiffJSON(filtered)
+		outputDiffJSON(filtered)
 	case "csv":
-		return outputDiffCSV(filtered)
+		outputDiffCSV(filtered)
 	default:
-		return outputDiffText(filtered, from, to)
+		outputDiffText(filtered, from, to)
 	}
+	return nil
 }
 
-func outputDiffText(changes []storage.Change, from, to time.Time) error {
+func outputDiffText(changes []storage.Change, from, to time.Time) {
 	fmt.Printf("Scope changes from %s to %s:\n\n", from.Format("2006-01-02"), to.Format("2006-01-02"))
 
 	added := 0
 	removed := 0
-	
+
 	for _, change := range changes {
 		var symbol string
 		if change.ChangeType == "added" {
@@ -143,10 +143,9 @@ func outputDiffText(changes []storage.Change, from, to time.Time) error {
 	}
 
 	fmt.Printf("\nSummary: %d added, %d removed, %d total\n", added, removed, len(changes))
-	return nil
 }
 
-func outputDiffJSON(changes []storage.Change) error {
+func outputDiffJSON(changes []storage.Change) {
 	// Simple JSON output
 	fmt.Println("[")
 	for i, change := range changes {
@@ -165,10 +164,9 @@ func outputDiffJSON(changes []storage.Change) error {
 		}
 	}
 	fmt.Println("]")
-	return nil
 }
 
-func outputDiffCSV(changes []storage.Change) error {
+func outputDiffCSV(changes []storage.Change) {
 	fmt.Println("type,platform,target,category,program,time")
 	for _, change := range changes {
 		fmt.Printf("%s,%s,%s,%s,%s,%s\n",
@@ -180,7 +178,6 @@ func outputDiffCSV(changes []storage.Change) error {
 			change.OccurredAt.Format(time.RFC3339),
 		)
 	}
-	return nil
 }
 
 func csvEscape(s string) string {

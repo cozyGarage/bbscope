@@ -321,10 +321,12 @@ Extracts specific types of targets from the database. This command is designed f
 **Subcommands:**
 
 - `wildcards`: Get all wildcard domains (e.g., `*.example.com`).
-- `domains`: Get all domains (including wildcards).
+- `domains`: Get all domains (including wildcards). IPs and CIDR ranges are excluded.
 - `urls`: Get all full URLs (http/https).
-- `cidrs`: Get all CIDR ranges.
+- `cidrs`: Get all CIDR ranges (and IP ranges).
 - `ips`: Get all IP addresses.
+
+All `db get` subcommands accept `--platform` to limit results to a single platform (e.g. `--platform h1`). It defaults to `all`.
 
 **Flags for `db get wildcards`:**
 

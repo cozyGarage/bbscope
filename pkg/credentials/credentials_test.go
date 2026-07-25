@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -16,8 +17,11 @@ func TestKeyConstants(t *testing.T) {
 			t.Error("Found empty key in ListKeys()")
 		}
 		// Keys should be lowercase with dots
-		if key != key {
-			t.Errorf("Key should be consistent: %s", key)
+		if key != strings.ToLower(key) {
+			t.Errorf("Key should be lowercase: %s", key)
+		}
+		if !strings.Contains(key, ".") {
+			t.Errorf("Key should be namespaced with a dot: %s", key)
 		}
 	}
 }

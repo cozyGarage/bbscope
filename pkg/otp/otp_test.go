@@ -70,7 +70,7 @@ func TestGenerateTOTP(t *testing.T) {
 func TestGenerateTOTP_OTPAuthURI(t *testing.T) {
 	// Test with otpauth:// URI format
 	uri := "otpauth://totp/Test:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Test"
-	
+
 	code, err := GenerateTOTP(uri, time.Now())
 	if err != nil {
 		t.Errorf("GenerateTOTP() with URI error = %v", err)
@@ -84,7 +84,7 @@ func TestGenerateTOTP_OTPAuthURI(t *testing.T) {
 func TestGenerateTOTP_DigitsPrefix(t *testing.T) {
 	// Test with "digits secret" format
 	secret := "6 JBSWY3DPEHPK3PXP"
-	
+
 	code, err := GenerateTOTP(secret, time.Now())
 	if err != nil {
 		t.Errorf("GenerateTOTP() error = %v", err)
@@ -98,7 +98,7 @@ func TestGenerateTOTP_DigitsPrefix(t *testing.T) {
 func TestGenerateTOTP_8Digits(t *testing.T) {
 	// Test 8-digit TOTP
 	secret := "8 JBSWY3DPEHPK3PXP"
-	
+
 	code, err := GenerateTOTP(secret, time.Now())
 	if err != nil {
 		t.Errorf("GenerateTOTP() error = %v", err)

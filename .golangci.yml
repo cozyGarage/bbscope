@@ -35,6 +35,15 @@ linters-settings:
   gosec:
     excludes:
       - G104 # Audit errors not checked (we handle this case by case)
+      # The following are intentional design choices / false positives for this
+      # recon tool and are handled deliberately in the code:
+      - G101 # "credential" constants are keychain key names, not secrets
+      - G115 # integer conversion is bounded (TOTP time step)
+      - G201 # SQL is built from hardcoded strings with parameterised values
+      - G204 # `db shell` intentionally launches psql
+      - G304 # `db import` intentionally opens a user-provided file
+      - G402 # TLS verification is intentionally skippable for proxy debugging
+      - G505 # SHA1 is required by the TOTP spec (RFC 4226)
     config:
       global:
         audit: enabled
@@ -43,6 +52,8 @@ linters-settings:
     enable-all: true
     disable:
       - fieldalignment # Not critical for this project
+      - shadow # Flags idiomatic err shadowing; too noisy for this project
+      - unusedwrite # Flags struct fields set in tests but not asserted
   
   goimports:
     local-prefixes: github.com/cozyGarage/bbscope

@@ -74,12 +74,12 @@ func TestPollerAuthenticate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewPoller("existing-token")
 			err := p.Authenticate(ctx, tt.cfg)
-			
+
 			if (err != nil) != tt.wantError {
 				t.Errorf("Authenticate() error = %v, wantError %v", err, tt.wantError)
 				return
 			}
-			
+
 			if p.token != tt.wantToken {
 				t.Errorf("Authenticate() token = %v, want %v", p.token, tt.wantToken)
 			}

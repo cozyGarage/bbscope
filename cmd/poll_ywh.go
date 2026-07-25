@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
@@ -22,7 +23,9 @@ var pollYwhCmd = &cobra.Command{
 		otpSecret := credentials.Get("yeswehack.otpsecret")
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
-			whttp.SetupProxy(proxy)
+			if err := whttp.SetupProxy(proxy); err != nil {
+				return err
+			}
 		}
 		// Validate auth: require either token OR (email+password+otp-secret)
 		if token == "" && (email == "" || password == "" || otpSecret == "") {
@@ -44,7 +47,7 @@ func init() {
 	pollYwhCmd.Flags().StringP("email", "E", "", "YesWeHack login email")
 	pollYwhCmd.Flags().StringP("password", "P", "", "YesWeHack login password")
 	pollYwhCmd.Flags().StringP("otp-secret", "O", "", "YesWeHack TOTP secret (base32)")
-	viper.BindPFlag("yeswehack.email", pollYwhCmd.Flags().Lookup("email"))
-	viper.BindPFlag("yeswehack.password", pollYwhCmd.Flags().Lookup("password"))
-	viper.BindPFlag("yeswehack.otpsecret", pollYwhCmd.Flags().Lookup("otp-secret"))
+	_ = viper.BindPFlag("yeswehack.email", pollYwhCmd.Flags().Lookup("email"))
+	_ = viper.BindPFlag("yeswehack.password", pollYwhCmd.Flags().Lookup("password"))
+	_ = viper.BindPFlag("yeswehack.otpsecret", pollYwhCmd.Flags().Lookup("otp-secret"))
 }

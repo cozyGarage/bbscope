@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
@@ -76,7 +77,7 @@ func runImport(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Importing %d entries...\n", len(entries))
-	
+
 	count := 0
 	ctx := context.Background()
 	for _, e := range entries {
@@ -118,7 +119,7 @@ func parseimportJSON(r io.Reader) ([]storage.Entry, error) {
 
 func parseimportCSV(r io.Reader) ([]storage.Entry, error) {
 	reader := csv.NewReader(r)
-	
+
 	// Skip header
 	if _, err := reader.Read(); err != nil {
 		return nil, err

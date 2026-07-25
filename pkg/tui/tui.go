@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
@@ -21,29 +22,23 @@ const (
 
 // Model represents the main application state
 type Model struct {
-	db          *storage.DB
-	ctx         context.Context
-	cancel      context.CancelFunc
-	width       int
-	height      int
-	view        ViewMode
-	quitting    bool
-	err         error
+	db       *storage.DB
+	ctx      context.Context
+	cancel   context.CancelFunc
+	width    int
+	height   int
+	view     ViewMode
+	quitting bool
+	err      error
 
 	// Dashboard state
-	stats       Stats
+	stats         Stats
 	recentChanges []storage.Change
-	statsLoaded bool
+	statsLoaded   bool
 
 	// Polling state
-	pollingActive  bool
-	pollingStatus  string
-	pollingProgress float64
-
-	// Search state
-	searchQuery    string
-	searchResults  []storage.Entry
-	searchCursor   int
+	pollingActive bool
+	pollingStatus string
 
 	// Styling
 	styles Styles
@@ -51,25 +46,25 @@ type Model struct {
 
 // Stats represents dashboard statistics
 type Stats struct {
-	ProgramCount  int
-	TargetCount   int
-	ChangesCount  int
-	LastUpdated   time.Time
+	ProgramCount int
+	TargetCount  int
+	ChangesCount int
+	LastUpdated  time.Time
 }
 
 // Styles contains all lipgloss styles for the TUI
 type Styles struct {
-	Border      lipgloss.Style
-	Title       lipgloss.Style
-	Subtitle    lipgloss.Style
-	Stat        lipgloss.Style
-	StatLabel   lipgloss.Style
-	StatValue   lipgloss.Style
-	Change      lipgloss.Style
-	ChangeAdded lipgloss.Style
+	Border        lipgloss.Style
+	Title         lipgloss.Style
+	Subtitle      lipgloss.Style
+	Stat          lipgloss.Style
+	StatLabel     lipgloss.Style
+	StatValue     lipgloss.Style
+	Change        lipgloss.Style
+	ChangeAdded   lipgloss.Style
 	ChangeRemoved lipgloss.Style
-	Help        lipgloss.Style
-	Error       lipgloss.Style
+	Help          lipgloss.Style
+	Error         lipgloss.Style
 }
 
 // NewModel creates a new TUI model with minimal/clean styling
@@ -149,7 +144,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
-	
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -251,7 +246,7 @@ func (m Model) renderFooter() string {
 		"[?]help",
 		"[q]uit",
 	}
-	
+
 	helpText := lipgloss.JoinHorizontal(lipgloss.Left, helps...)
 	return "\n" + m.styles.Help.Render(helpText)
 }

@@ -6,11 +6,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/otp"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
-	"github.com/tidwall/gjson"
 )
 
 type Poller struct{ token string }
@@ -182,7 +183,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 	for attempts := 1; attempts <= OTP_ATTEMPTS; attempts++ {
 		code, err := otp.GenerateTOTP(otpSecret, time.Now())
 		if err != nil {
-			return "", fmt.Errorf("failed to generate TOTP: %v", err)
+			return "", fmt.Errorf("failed to generate TOTP: %w", err)
 		}
 
 		totpURL := "https://api.yeswehack.com/account/totp"
@@ -198,7 +199,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 		}, nil)
 
 		if err != nil {
-			return "", fmt.Errorf("failed to send TOTP request: %v", err)
+			return "", fmt.Errorf("failed to send TOTP request: %w", err)
 		}
 
 		if totpRes.StatusCode != 400 {

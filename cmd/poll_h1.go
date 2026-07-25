@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
@@ -27,7 +28,9 @@ var pollH1Cmd = &cobra.Command{
 
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
-			whttp.SetupProxy(proxy)
+			if err := whttp.SetupProxy(proxy); err != nil {
+				return err
+			}
 		}
 		poller := h1platform.NewPoller(user, token)
 		return runPollWithPollers(cmd, []platforms.PlatformPoller{poller})
@@ -38,7 +41,7 @@ func init() {
 	pollCmd.AddCommand(pollH1Cmd)
 	pollH1Cmd.Flags().StringP("user", "u", "", "HackerOne username")
 	pollH1Cmd.Flags().StringP("token", "t", "", "HackerOne API token")
-	viper.BindPFlag("hackerone.username", pollH1Cmd.Flags().Lookup("user"))
-	viper.BindPFlag("hackerone.token", pollH1Cmd.Flags().Lookup("token"))
+	_ = viper.BindPFlag("hackerone.username", pollH1Cmd.Flags().Lookup("user"))
+	_ = viper.BindPFlag("hackerone.token", pollH1Cmd.Flags().Lookup("token"))
 	// Reuse common flags from parent via cobra's flag inheritance
 }

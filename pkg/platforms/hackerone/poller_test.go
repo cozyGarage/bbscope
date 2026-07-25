@@ -110,15 +110,15 @@ func TestAuthB64Encoding(t *testing.T) {
 	// Test that the base64 encoding is correct for HTTP Basic Auth
 	username := "api_user"
 	token := "secret_token_123"
-	
+
 	p := NewPoller(username, token)
-	
+
 	// Decode and verify
 	decoded, err := base64.StdEncoding.DecodeString(p.authB64)
 	if err != nil {
 		t.Fatalf("Failed to decode authB64: %v", err)
 	}
-	
+
 	expected := username + ":" + token
 	if string(decoded) != expected {
 		t.Errorf("Decoded authB64 = %v, want %v", string(decoded), expected)

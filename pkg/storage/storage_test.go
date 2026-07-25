@@ -134,12 +134,12 @@ func TestChangeStruct(t *testing.T) {
 
 func TestEntryStruct(t *testing.T) {
 	entry := Entry{
-		ProgramURL:        "https://hackerone.com/example",
-		Handle:            "example",
-		TargetNormalized:  "*.example.com",
-		Category:          "wildcard",
-		InScope:           true,
-		IsBBP:             true,
+		ProgramURL:       "https://hackerone.com/example",
+		Handle:           "example",
+		TargetNormalized: "*.example.com",
+		Category:         "wildcard",
+		InScope:          true,
+		IsBBP:            true,
 	}
 
 	if entry.Handle != "example" {

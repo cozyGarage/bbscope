@@ -57,12 +57,12 @@ func TestGetCategories(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := getCategories(tt.input)
-			
+
 			if len(got) != len(tt.expected) {
 				t.Errorf("getCategories(%q) returned %d items, want %d", tt.input, len(got), len(tt.expected))
 				return
 			}
-			
+
 			for i, v := range got {
 				if v != tt.expected[i] {
 					t.Errorf("getCategories(%q)[%d] = %v, want %v", tt.input, i, v, tt.expected[i])
@@ -77,11 +77,11 @@ func TestGetCategoriesCaseInsensitive(t *testing.T) {
 	lowercaseResult := getCategories("web")
 	uppercaseResult := getCategories("WEB")
 	mixedCaseResult := getCategories("WeB")
-	
+
 	if len(lowercaseResult) != len(uppercaseResult) {
 		t.Error("getCategories should be case-insensitive")
 	}
-	
+
 	if len(lowercaseResult) != len(mixedCaseResult) {
 		t.Error("getCategories should be case-insensitive for mixed case")
 	}

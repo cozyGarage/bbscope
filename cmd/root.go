@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 
@@ -112,7 +114,8 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+		var cfgNotFound viper.ConfigFileNotFoundError
+		if errors.As(err, &cfgNotFound) {
 			// Config file not found; create it with defaults.
 			home, _ := os.UserHomeDir()
 			configPath := filepath.Join(home, ".bbscope.yaml")
@@ -171,16 +174,16 @@ func checkConfigPermissions(path string) {
 	if path == "" {
 		return
 	}
-	
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return
 	}
-	
+
 	// On Unix-like systems, check if group or others have read permissions
 	// Mode().Perm() returns the permission bits (e.g., 0644)
 	mode := info.Mode().Perm()
-	
+
 	// Check if group or others have any permissions (bits 0077)
 	if mode&0077 != 0 {
 		utils.Log.Warnf("Config file %s has insecure permissions (%04o). It contains sensitive credentials.", path, mode)

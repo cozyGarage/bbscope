@@ -15,11 +15,12 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/tidwall/gjson"
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/otp"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
-	"github.com/tidwall/gjson"
 )
 
 const (
@@ -267,9 +268,9 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 		}
 
 		// Assuming res.BodyString is the JSON string response
-		result := gjson.Get(string(res.BodyString), "engagements")
+		result := gjson.Get(res.BodyString, "engagements")
 		if totalCount == 0 {
-			totalCount = int(gjson.Get(string(res.BodyString), "paginationMeta.totalCount").Int())
+			totalCount = int(gjson.Get(res.BodyString, "paginationMeta.totalCount").Int())
 		}
 
 		// If the engagements array is empty, it means there are no more programs to fetch on subsequent pages.

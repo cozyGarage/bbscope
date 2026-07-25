@@ -6,8 +6,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/spf13/cobra"
+
+	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 )
 
 var configCmd = &cobra.Command{
