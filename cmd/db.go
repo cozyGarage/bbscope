@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
@@ -305,7 +307,7 @@ var shellCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Connecting to %s...\n", dbURL)
+		fmt.Printf("Connecting to %s...\n", utils.RedactURL(dbURL))
 		fmt.Println("bbscope database schema:")
 		fmt.Println("  programs      (id, platform, handle, url, disabled, is_ignored, last_seen_at)")
 		fmt.Println("  targets_raw   (id, program_id, target, category, in_scope, is_bbp, description, last_seen_at)")
@@ -313,7 +315,21 @@ var shellCmd = &cobra.Command{
 		fmt.Println("  targets_ai_enhanced (id, target_id, target_ai_normalized, category, in_scope)")
 		fmt.Println("")
 
-		pgCmd := exec.Command("psql", dbURL)
+		// Avoid leaking the password via argv (visible in `ps`): pass it through
+		// the PGPASSWORD environment variable and hand psql a URL with the
+		// password stripped out.
+		psqlURL := dbURL
+		env := os.Environ()
+		if u, perr := url.Parse(dbURL); perr == nil && u.User != nil {
+			if pw, ok := u.User.Password(); ok {
+				env = append(env, "PGPASSWORD="+pw)
+				u.User = url.User(u.User.Username())
+				psqlURL = u.String()
+			}
+		}
+
+		pgCmd := exec.Command("psql", psqlURL)
+		pgCmd.Env = env
 		pgCmd.Stdin = os.Stdin
 		pgCmd.Stdout = os.Stdout
 		pgCmd.Stderr = os.Stderr
