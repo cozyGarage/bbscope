@@ -6,11 +6,11 @@ require (
 	github.com/PuerkitoBio/goquery v1.6.1
 	github.com/charmbracelet/bubbletea v1.2.4
 	github.com/charmbracelet/lipgloss v1.0.0
-	github.com/hashicorp/go-retryablehttp v0.7.5
+	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/lib/pq v1.10.9
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
-	github.com/tidwall/gjson v1.8.1
+	github.com/tidwall/gjson v1.19.0
 	github.com/weppos/publicsuffix-go v0.50.0
 	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/net v0.44.0
@@ -44,7 +44,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/tidwall/match v1.0.3 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/sync v0.17.0 // indirect
