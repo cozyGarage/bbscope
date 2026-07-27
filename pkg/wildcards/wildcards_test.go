@@ -1,7 +1,10 @@
 package wildcards
 
 import (
+	"reflect"
 	"testing"
+
+	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 func TestBlacklistedSuffixes(t *testing.T) {
@@ -9,23 +12,18 @@ func TestBlacklistedSuffixes(t *testing.T) {
 		t.Error("BlacklistedSuffixes should not be empty")
 	}
 
-	// Check some expected entries exist
 	expectedSuffixes := []string{
 		"amazonaws.com",
 		"herokuapp.com",
 		"github.io",
 		"vercel.app",
 	}
-
+	have := make(map[string]bool, len(BlacklistedSuffixes))
+	for _, s := range BlacklistedSuffixes {
+		have[s] = true
+	}
 	for _, expected := range expectedSuffixes {
-		found := false
-		for _, suffix := range BlacklistedSuffixes {
-			if suffix == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !have[expected] {
 			t.Errorf("BlacklistedSuffixes missing %q", expected)
 		}
 	}
@@ -33,139 +31,101 @@ func TestBlacklistedSuffixes(t *testing.T) {
 
 func TestNonDomainCategories(t *testing.T) {
 	expectedCategories := []string{"android", "ios", "binary", "code", "ai", "hardware", "blockchain"}
-
 	for _, cat := range expectedCategories {
 		if _, ok := NonDomainCategories[cat]; !ok {
 			t.Errorf("NonDomainCategories missing %q", cat)
 		}
 	}
-
-	// url should NOT be in NonDomainCategories
 	if _, ok := NonDomainCategories["url"]; ok {
 		t.Error("NonDomainCategories should not contain 'url'")
 	}
 }
 
-func TestIsBlacklisted(t *testing.T) {
+// TestIsBlacklistedSuffix exercises the real production function (previously the
+// test reimplemented its own copy, which could pass while prod regressed).
+func TestIsBlacklistedSuffix(t *testing.T) {
 	tests := []struct {
-		domain string
-		want   bool
+		host string
+		want bool
 	}{
 		{"test.amazonaws.com", true},
 		{"app.herokuapp.com", true},
 		{"user.github.io", true},
+		{"amazonaws.com", true},  // exact match
+		{"sub.vercel.app", true}, // multi-label suffix
+		{"a.b.c.amazonaws.com", true},
 		{"example.com", false},
 		{"my-company.com", false},
-		{"amazonaws.com", true}, // exact match
-		{"sub.vercel.app", true},
+		{"com", false},
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.domain, func(t *testing.T) {
-			got := isBlacklisted(tt.domain)
-			if got != tt.want {
-				t.Errorf("isBlacklisted(%q) = %v, want %v", tt.domain, got, tt.want)
+		t.Run(tt.host, func(t *testing.T) {
+			if got := IsBlacklistedSuffix(tt.host); got != tt.want {
+				t.Errorf("IsBlacklistedSuffix(%q) = %v, want %v", tt.host, got, tt.want)
 			}
 		})
 	}
 }
 
-// isBlacklisted checks if a domain ends with any blacklisted suffix
-func isBlacklisted(domain string) bool {
-	for _, suffix := range BlacklistedSuffixes {
-		if domain == suffix || len(domain) > len(suffix) && domain[len(domain)-len(suffix)-1] == '.' && domain[len(domain)-len(suffix):] == suffix {
-			return true
-		}
-	}
-	return false
-}
-
-func TestExtractDomain(t *testing.T) {
+func TestNormalizeForSubdomainTools(t *testing.T) {
 	tests := []struct {
-		name   string
-		target string
-		want   string
+		name  string
+		input string
+		want  string
 	}{
-		{"wildcard", "*.example.com", "example.com"},
-		{"double wildcard", "*.*.example.com", "example.com"},
-		{"plain domain", "example.com", "example.com"},
-		{"with subdomain", "sub.example.com", "sub.example.com"},
-		{"url with path", "https://example.com/path", "example.com"},
-		{"url with port", "https://example.com:8080", "example.com:8080"},
+		{"wildcard prefix stripped", "*.example.com", "example.com"},
+		{"url host extracted", "https://portal.example.com/login", "portal.example.com"},
+		{"port stripped", "example.com:8443", "example.com"},
+		{"trailing dot-star to com", "example.*", "example.com"},
+		{"tld placeholder to com", "example.<tld>", "example.com"},
+		{"parentheses removed", "(example).com", "example.com"},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractDomain(tt.target)
-			if got != tt.want {
-				t.Errorf("extractDomain(%q) = %q, want %q", tt.target, got, tt.want)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeForSubdomainTools(tc.input); got != tc.want {
+				t.Errorf("NormalizeForSubdomainTools(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
 	}
 }
 
-// extractDomain extracts the domain from a target string
-func extractDomain(target string) string {
-	// Remove wildcard prefix
-	target = trimWildcardPrefix(target)
-
-	// Try to parse as URL
-	if u, err := parseURL(target); err == nil && u.Host != "" {
-		return u.Host
+func TestWildcardHasPath(t *testing.T) {
+	tests := []struct {
+		target string
+		want   bool
+	}{
+		{"*.example.com", false},
+		{"https://*.example.com", false},
+		{"*.example.com/admin", true},
+		{"https://example.com/path", true},
 	}
-
-	return target
-}
-
-func trimWildcardPrefix(s string) string {
-	for len(s) > 0 && (s[0] == '*' || s[0] == '.') {
-		s = s[1:]
-	}
-	return s
-}
-
-func parseURL(target string) (*struct{ Host string }, error) {
-	// Simple URL parsing for testing
-	if len(target) > 8 && (target[:8] == "https://" || target[:7] == "http://") {
-		// Find the host part
-		start := 7
-		if target[:8] == "https://" {
-			start = 8
-		}
-		end := start
-		for end < len(target) && target[end] != '/' && target[end] != '?' {
-			end++
-		}
-		return &struct{ Host string }{Host: target[start:end]}, nil
-	}
-	return &struct{ Host string }{}, nil
-}
-
-func TestResultStruct(t *testing.T) {
-	r := Result{
-		Domain:      "*.example.com",
-		ProgramURLs: []string{"https://hackerone.com/example", "https://bugcrowd.com/example"},
-	}
-
-	if r.Domain != "*.example.com" {
-		t.Errorf("Result.Domain = %q, want %q", r.Domain, "*.example.com")
-	}
-
-	if len(r.ProgramURLs) != 2 {
-		t.Errorf("Result.ProgramURLs length = %d, want 2", len(r.ProgramURLs))
+	for _, tt := range tests {
+		t.Run(tt.target, func(t *testing.T) {
+			if got := WildcardHasPath(tt.target); got != tt.want {
+				t.Errorf("WildcardHasPath(%q) = %v, want %v", tt.target, got, tt.want)
+			}
+		})
 	}
 }
 
-func TestOptionsStruct(t *testing.T) {
-	// Test default options
-	opts := Options{}
-	if opts.Aggressive {
-		t.Error("Default Options.Aggressive should be false")
+func TestCollectSorted(t *testing.T) {
+	entries := []storage.Entry{
+		{ProgramURL: "https://h1.example/p", TargetNormalized: "*.beta.example.com", Category: "wildcard", InScope: true},
+		{ProgramURL: "https://h1.example/p", TargetNormalized: "https://shop.alpha.example.com", Category: "url", InScope: true},
+		{ProgramURL: "https://h1.example/p", TargetNormalized: "*.cloudfront.net", Category: "wildcard", InScope: true},
 	}
 
-	// Test with aggressive mode
-	opts = Options{Aggressive: true}
-	if !opts.Aggressive {
-		t.Error("Options.Aggressive should be true when set")
+	got := CollectSorted(entries, Options{Aggressive: true})
+
+	var domains []string
+	for _, r := range got {
+		domains = append(domains, r.Domain)
+	}
+	want := []string{"example.com"} // beta+alpha collapse to root; cloudfront.net is blacklisted
+	if !reflect.DeepEqual(domains, want) {
+		t.Fatalf("CollectSorted domains = %v, want %v", domains, want)
+	}
+	if len(got) == 1 && (len(got[0].ProgramURLs) != 1 || got[0].ProgramURLs[0] != "https://h1.example/p") {
+		t.Fatalf("expected single program url, got %v", got[0].ProgramURLs)
 	}
 }
