@@ -41,6 +41,10 @@ type WHTTPRes struct {
 var retryClient *retryablehttp.Client
 var GlobalDebug bool
 
+// maxResponseBytes caps how much of a response body we read into memory to
+// avoid unbounded memory growth from very large or malicious responses.
+const maxResponseBytes = 100 << 20 // 100 MiB
+
 // sensitiveHeaders are redacted in debug output to prevent credential leakage
 var sensitiveHeaders = []string{"authorization", "cookie", "x-csrf-token", "x-api-key", "x-auth-token"}
 
@@ -143,7 +147,7 @@ func SendHTTPRequest(wReq *WHTTPReq, customClient *retryablehttp.Client) (wRes *
 		Headers:    resp.Header,
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -183,14 +187,12 @@ func SetupProxy(proxyURL string) error {
 	client.HTTPClient.Transport = &http.Transport{
 		Proxy: http.ProxyURL(parsedURL),
 		TLSClientConfig: &tls.Config{
+			// Intercepting proxies (Burp/ZAP) present their own certificate, so
+			// verification is skipped here. This transport is only installed when
+			// the user explicitly passes --proxy. Use a modern TLS floor and let
+			// Go negotiate cipher suites instead of pinning obsolete TLS 1.1.
 			InsecureSkipVerify: true,
-			CipherSuites: []uint16{
-				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			},
-			PreferServerCipherSuites: true,
-			MinVersion:               tls.VersionTLS11,
-			MaxVersion:               tls.VersionTLS11,
+			MinVersion:         tls.VersionTLS12,
 		},
 	}
 
