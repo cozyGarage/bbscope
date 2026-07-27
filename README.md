@@ -207,7 +207,7 @@ See **Notification Integrations** section below for setup guides.
 
 ## 🛠️ Usage & Commands
 
-`bbscope` is organized into two main commands: `poll` and `db`.
+`bbscope` is organized around a few top-level commands: `poll` (fetch scopes), `db` (query/manage stored data), `daemon` (scheduled polling), and `tui` (interactive terminal UI).
 
 ### `poll` - Fetching Scopes
 
@@ -372,8 +372,6 @@ Compare scope between two dates to track changes over time.
 | `--only-removed` | Show only removals |
 | `--format` | Output format: `text`, `json`, `csv` |
 
-| `--format` | Output format: `text`, `json`, `csv` |
-
 #### `db export`
 
 Export all database content to JSON or CSV.
@@ -426,6 +424,16 @@ Add a custom target to the database manually.
 
 ---
 
+### `tui` - Interactive Terminal UI
+
+Launch an interactive terminal dashboard to browse stored scope, view stats, and inspect recent changes without memorizing `db` flags. Requires the database to be configured.
+
+**Usage:** `bbscope tui`
+
+See [docs/TUI_QUICKREF.md](docs/TUI_QUICKREF.md) for keyboard shortcuts.
+
+---
+
 ## 📖 Examples
 
 **1. Run Daemon - Automated Polling**
@@ -452,45 +460,45 @@ This is a great first command to run to populate your database.
 bbscope poll --db -b -p
 ```
 
-**4. Get all wildcards from all platforms, aggressive extraction
+**4. Get all wildcards from all platforms, aggressive extraction**
 
 ```bash
 bbscope db get wildcards -a
 ```
 
-**3. Get all URLs and pipe to httpx**
+**5. Get all URLs and pipe to httpx**
 
 ```bash
 bbscope db get urls | httpx 
 ```
 
-**4. Show the 10 most recent scope changes**
+**6. Show the 10 most recent scope changes**
 
 ```bash
 bbscope db changes --limit 10
 ```
 
-**5. Get all CIDRs from all platforms**
+**7. Get all CIDRs from all platforms**
 
 ```bash
 bbscope db get cidrs
 ```
 
-**6. Poll with a Proxy**
+**8. Poll with a Proxy**
 
 ```bash
 # Great for debugging when a platform changes their API 
 bbscope poll h1 --proxy "http://127.0.0.1:8080"
 ```
 
-**7. HackerOne Polling (with Auth)**
+**9. HackerOne Polling (with Auth)**
 
 ```bash
 # Using flags (overrides config file)
 bbscope poll h1 --user "your_user" --token "your_token"
 ```
 
-**8. Bugcrowd Polling**
+**10. Bugcrowd Polling**
 
 ```bash
 # Using session token
@@ -500,19 +508,19 @@ bbscope poll bc --token "your_crowdcontrol_session_key"
 bbscope poll bc --email "..." --password "..." --otp-secret "..."
 ```
 
-**9. Intigriti Polling**
+**11. Intigriti Polling**
 
 ```bash
 bbscope poll it --token "your_api_token"
 ```
 
-**10. YesWeHack Polling**
+**12. YesWeHack Polling**
 
 ```bash
 bbscope poll ywh --token "your_jwt_token"
 ```
 
-**11. Immunefi Polling**
+**13. Immunefi Polling**
 
 ```bash
 bbscope poll immunefi

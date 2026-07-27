@@ -51,7 +51,8 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pin for reproducible lint results (was "latest", which drifts over time).
+          version: v1.64.8
           args: --timeout=5m
 
   build:
@@ -112,3 +113,69 @@ jobs:
         # Excluded rules are intentional design choices / false positives for
         # this recon tool (see .golangci.yml gosec.excludes for rationale).
         run: gosec -exclude=G104,G101,G115,G201,G204,G304,G402,G505 -exclude-dir=docs ./...
+
+  tidy:
+    name: Tidy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Verify go.mod and go.sum are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum \
+            || (echo "::error::go.mod/go.sum are not tidy. Run 'go mod tidy' and commit the result." && exit 1)
+
+  vuln:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    # Advisory: govulncheck also reports standard-library CVEs fixed only in the
+    # very latest Go patch releases, which are outside this repo's control and
+    # would otherwise block unrelated PRs. Keep it visible but non-blocking; act
+    # on actionable module-level findings by upgrading the dependency.
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  release-check:
+    name: Release Config Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+
+      - name: Validate GoReleaser configuration
+        run: goreleaser check
