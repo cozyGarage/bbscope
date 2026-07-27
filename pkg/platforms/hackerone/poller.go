@@ -40,17 +40,34 @@ func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) err
 func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOptions) ([]string, error) {
 	var handles []string
 	currentURL := "https://api.hackerone.com/v1/hackers/programs?page%5Bsize%5D=100"
+	const maxListRetries = 5
 	for {
-		res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
-			Method:  "GET",
-			URL:     currentURL,
-			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Basic " + p.authB64}},
-		}, nil)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 
+		var res *whttp.WHTTPRes
+		var err error
+		for attempt := 1; attempt <= maxListRetries; attempt++ {
+			res, err = whttp.SendHTTPRequest(&whttp.WHTTPReq{
+				Method:  "GET",
+				URL:     currentURL,
+				Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Basic " + p.authB64}},
+			}, nil)
+			if err == nil {
+				break
+			}
+			utils.Log.Warnf("HTTP request failed (attempt %d/%d), retrying: %v", attempt, maxListRetries, err)
+			if attempt < maxListRetries {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(2 * time.Second):
+				}
+			}
+		}
 		if err != nil {
-			utils.Log.Warn("HTTP request failed, retrying: ", err)
-			time.Sleep(2 * time.Second)
-			continue
+			return nil, fmt.Errorf("listing programs failed after %d attempts: %w", maxListRetries, err)
 		}
 
 		if res.StatusCode != 200 {

@@ -228,7 +228,6 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 	for _, cookie := range retryClient.HTTPClient.Jar.Cookies(identityUrl) {
 		if cookie.Name == "_bugcrowd_session" {
 			utils.Log.Info("Login OK. Fetching programs, please wait...")
-			utils.Log.Debug("SESSION: ", cookie.Value)
 			return cookie.Value, nil
 		}
 	}
@@ -369,8 +368,7 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(res.BodyString))
 	if err != nil {
-		log.Fatal(err)
-		return "", err
+		return "", fmt.Errorf("parsing engagement page for %s: %w", handle, err)
 	}
 
 	div := doc.Find("div[data-react-class='ResearcherEngagementBrief']")

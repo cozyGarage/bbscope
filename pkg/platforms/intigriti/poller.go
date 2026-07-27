@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -15,7 +16,10 @@ import (
 )
 
 type Poller struct {
-	token       string
+	token string
+	// mu guards the handle lookup maps, which are populated by
+	// ListProgramHandles and read concurrently by FetchProgramScope workers.
+	mu          sync.RWMutex
 	urlToID     map[string]string
 	handleToURL map[string]string
 }
@@ -34,14 +38,17 @@ func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) err
 }
 
 func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOptions) ([]string, error) {
-	p.urlToID = map[string]string{}
-	p.handleToURL = map[string]string{}
+	urlToID := map[string]string{}
+	handleToURL := map[string]string{}
 	offset := 0
 	limit := 500
 	total := 0
 	handles := []string{}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
 			Method:  "GET",
 			URL:     fmt.Sprintf("https://api.intigriti.com/external/researcher/v1/programs?statusId=3&limit=%d&offset=%d", limit, offset),
@@ -82,8 +89,8 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			// Filtering logic from GetAllProgramsScope
 			if (opts.PrivateOnly && confidentialityLevel != 4) || !opts.PrivateOnly {
 				if (opts.BountyOnly && maxBounty != 0) || !opts.BountyOnly {
-					p.urlToID[handle] = id
-					p.handleToURL[handle] = url
+					urlToID[handle] = id
+					handleToURL[handle] = url
 					handles = append(handles, handle)
 				}
 			}
@@ -94,40 +101,59 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			break
 		}
 	}
+
+	// Publish the freshly-built lookup maps atomically for concurrent readers.
+	p.mu.Lock()
+	p.urlToID = urlToID
+	p.handleToURL = handleToURL
+	p.mu.Unlock()
 	return handles, nil
 }
 
 func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts platforms.PollOptions) (scope.ProgramData, error) {
-	pData := scope.ProgramData{Url: p.handleToURL[handle]}
+	p.mu.RLock()
+	url := p.handleToURL[handle]
 	id := p.urlToID[handle]
+	p.mu.RUnlock()
+
+	pData := scope.ProgramData{Url: url}
 	if id == "" {
-		// Ensure map is built at least once
-		if _, err := p.ListProgramHandles(ctx, opts); err == nil {
-			id = p.urlToID[handle]
-		}
-	}
-	if id == "" {
+		// The orchestrator always calls ListProgramHandles before fetching, so a
+		// missing id means this handle was not part of the listing. Skip it
+		// rather than re-entering ListProgramHandles (which races the maps).
+		utils.Log.Warnf("intigriti: no program id for handle %q; run ListProgramHandles first", handle)
 		return pData, nil
 	}
 
-	res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
-		Method:  "GET",
-		URL:     "https://api.intigriti.com/external/researcher/v1/programs/" + id,
-		Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
-	}, nil)
-
-	if err != nil {
-		return pData, err
-	}
-
-	if res.StatusCode == 401 {
-		utils.Log.Fatal("Invalid auth token")
-	}
-
-	if strings.Contains(res.BodyString, "Request blocked") {
-		utils.Log.Info("Rate limited. Retrying...")
-		time.Sleep(2 * time.Second)
-		return p.FetchProgramScope(ctx, handle, opts)
+	// Fetch with bounded, context-aware retries when the API rate-limits us.
+	const maxBlockedRetries = 5
+	var res *whttp.WHTTPRes
+	for attempt := 1; ; attempt++ {
+		var err error
+		res, err = whttp.SendHTTPRequest(&whttp.WHTTPReq{
+			Method:  "GET",
+			URL:     "https://api.intigriti.com/external/researcher/v1/programs/" + id,
+			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
+		}, nil)
+		if err != nil {
+			return pData, err
+		}
+		if res.StatusCode == 401 {
+			return pData, fmt.Errorf("invalid auth token")
+		}
+		if strings.Contains(res.BodyString, "Request blocked") {
+			if attempt >= maxBlockedRetries {
+				return pData, fmt.Errorf("intigriti: rate limited after %d attempts for %q", maxBlockedRetries, handle)
+			}
+			utils.Log.Info("Rate limited. Retrying...")
+			select {
+			case <-ctx.Done():
+				return pData, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+			continue
+		}
+		break
 	}
 
 	//processed := make(map[string]struct{})
