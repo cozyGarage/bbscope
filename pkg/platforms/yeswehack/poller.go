@@ -2,6 +2,7 @@ package yeswehack
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -147,7 +148,10 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 	}
 
 	loginURL := "https://api.yeswehack.com/login"
-	loginPayload := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
+	loginPayload, err := json.Marshal(map[string]string{"email": email, "password": password})
+	if err != nil {
+		return "", fmt.Errorf("building login payload: %w", err)
+	}
 
 	loginRes, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
 		Method: "POST",
@@ -155,7 +159,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 		Headers: []whttp.WHTTPHeader{
 			{Name: "Content-Type", Value: "application/json"},
 		},
-		Body: loginPayload,
+		Body: string(loginPayload),
 	}, nil)
 
 	if err != nil {

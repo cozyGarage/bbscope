@@ -525,7 +525,19 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 	}
 
-	// 4. Start a transaction for all the batched write operations
+	// 5. Apply every write below inside a single transaction so that a failure
+	// partway through never leaves partial adds/updates/removals committed.
+	tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("beginning upsert transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
 	if len(toAdd) > 0 {
 		// Prepare arrays for bulk insert using UNNEST
 		targets := make([]string, len(toAdd))
@@ -548,7 +560,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 
 		// Bulk insert using UNNEST - returns id, target, category to match back
-		rows, err := d.sql.QueryContext(ctx, `
+		rows, err := tx.QueryContext(ctx, `
 			INSERT INTO targets_raw(program_id, target, category, description, in_scope, is_bbp, first_seen_at, last_seen_at)
 			SELECT $1, t.target, t.category, t.description, t.in_scope, t.is_bbp, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 			FROM UNNEST($2::text[], $3::text[], $4::text[], $5::int[], $6::int[]) AS t(target, category, description, in_scope, is_bbp)
@@ -590,33 +602,22 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 
 	// Batch Updates
 	if len(toUpdate) > 0 {
-		tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
-		if err != nil {
-			return nil, err
-		}
 		stmt, err := tx.PrepareContext(ctx, `UPDATE targets_raw SET description = $1, in_scope = $2, is_bbp = $3, last_seen_at = CURRENT_TIMESTAMP WHERE id = $4`)
 		if err != nil {
-			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, u := range toUpdate {
-			_, err := stmt.ExecContext(ctx, nullIfEmpty(u.entry.Description), boolToInt(u.entry.InScope), boolToInt(u.entry.IsBBP), u.id)
-			if err != nil {
+			if _, err := stmt.ExecContext(ctx, nullIfEmpty(u.entry.Description), boolToInt(u.entry.InScope), boolToInt(u.entry.IsBBP), u.id); err != nil {
 				stmt.Close()
-				_ = tx.Rollback()
 				return nil, err
 			}
 		}
 		stmt.Close()
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
 	}
 
 	// Batch Touches (update last_seen_at) - single query using ANY
 	if len(toTouch) > 0 {
-		_, err := d.sql.ExecContext(ctx, `UPDATE targets_raw SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ANY($1::bigint[])`, pq.Array(toTouch))
-		if err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE targets_raw SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ANY($1::bigint[])`, pq.Array(toTouch)); err != nil {
 			return nil, fmt.Errorf("batch touching targets: %w", err)
 		}
 	}
@@ -721,10 +722,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	}
 
 	if len(variantAdds) > 0 {
-		tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
-		if err != nil {
-			return nil, err
-		}
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO targets_ai_enhanced(target_id, target_ai_normalized, category, in_scope, first_seen_at, last_seen_at)
 			VALUES($1,$2,$3,$4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
@@ -735,7 +732,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			RETURNING id
 		`)
 		if err != nil {
-			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, add := range variantAdds {
@@ -754,7 +750,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			var id int64
 			if err := stmt.QueryRowContext(ctx, add.targetID, add.variant.AINormalized, catVal, inScopeVal).Scan(&id); err != nil {
 				stmt.Close()
-				_ = tx.Rollback()
 				return nil, err
 			}
 			if existing := existingMap[add.key]; existing != nil {
@@ -769,19 +764,11 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			}
 		}
 		stmt.Close()
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
 	}
 
 	if len(variantUpdates) > 0 {
-		tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
-		if err != nil {
-			return nil, err
-		}
 		stmt, err := tx.PrepareContext(ctx, `UPDATE targets_ai_enhanced SET target_ai_normalized = $1, category = $2, in_scope = $3, last_seen_at = CURRENT_TIMESTAMP WHERE id = $4`)
 		if err != nil {
-			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, upd := range variantUpdates {
@@ -799,7 +786,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			}
 			if _, err := stmt.ExecContext(ctx, upd.variant.AINormalized, catVal, inScopeVal, upd.id); err != nil {
 				stmt.Close()
-				_ = tx.Rollback()
 				return nil, err
 			}
 			if existing := existingMap[upd.key]; existing != nil {
@@ -814,25 +800,16 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			}
 		}
 		stmt.Close()
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
 	}
 
 	if len(variantDeletes) > 0 {
-		tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
-		if err != nil {
-			return nil, err
-		}
 		stmt, err := tx.PrepareContext(ctx, `DELETE FROM targets_ai_enhanced WHERE id = $1`)
 		if err != nil {
-			_ = tx.Rollback()
 			return nil, err
 		}
 		for _, del := range variantDeletes {
 			if _, err := stmt.ExecContext(ctx, del.id); err != nil {
 				stmt.Close()
-				_ = tx.Rollback()
 				return nil, err
 			}
 			if existing := existingMap[del.key]; existing != nil {
@@ -840,9 +817,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			}
 		}
 		stmt.Close()
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
 	}
 
 	// Batch Deletes - single query using ANY
@@ -851,11 +825,15 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		for i, ex := range toRemove {
 			ids[i] = ex.ID
 		}
-		_, err := d.sql.ExecContext(ctx, `DELETE FROM targets_raw WHERE id = ANY($1::bigint[])`, pq.Array(ids))
-		if err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM targets_raw WHERE id = ANY($1::bigint[])`, pq.Array(ids)); err != nil {
 			return nil, fmt.Errorf("batch deleting targets: %w", err)
 		}
 	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing upsert transaction: %w", err)
+	}
+	committed = true
 
 	return changes, nil
 }

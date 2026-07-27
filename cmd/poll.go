@@ -174,7 +174,12 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		aiNormalizer = normalizer
 	}
 
-	ctx := context.Background()
+	// Use the command's context so SIGINT / cobra cancelation propagates to
+	// in-flight polling work. Fall back to a background context if unset.
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	if concurrency <= 0 {
 		concurrency = 5 // Default to 5 if invalid
@@ -285,6 +290,10 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 		go func() {
 			defer wg.Done()
 			for h := range handleChan {
+				// Stop pulling new work once the context is done.
+				if ctx.Err() != nil {
+					return
+				}
 				pd, err := p.FetchProgramScope(ctx, h, opts)
 				if err != nil {
 					// Log error but continue processing other programs
