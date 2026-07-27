@@ -1,0 +1,26 @@
+# Codecov configuration for bbscope.
+# CI already uploads coverage.out (see .github/workflows/ci.yml). These settings
+# turn that upload into a modest, non-blocking quality gate.
+coverage:
+  status:
+    project:
+      default:
+        # Aim to keep overall coverage from regressing. Allow a small drop so
+        # unrelated refactors are not blocked.
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        # Encourage new/changed code to carry tests, without hard-failing PRs.
+        target: 60%
+        threshold: 5%
+        informational: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  require_changes: true
+
+ignore:
+  - "docs"
+  - "**/*_test.go"
