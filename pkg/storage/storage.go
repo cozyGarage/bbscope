@@ -42,64 +42,6 @@ type DB struct {
 	sql *sql.DB
 }
 
-const schema = `
-CREATE TABLE IF NOT EXISTS programs (
-	id        SERIAL PRIMARY KEY,
-	platform  TEXT NOT NULL,
-	handle    TEXT NOT NULL,
-	url       TEXT NOT NULL UNIQUE,
-	first_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	strict    INTEGER NOT NULL DEFAULT 0 CHECK (strict IN (0,1)),
-	disabled  INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0,1)),
-	is_ignored INTEGER NOT NULL DEFAULT 0 CHECK (is_ignored IN (0,1))
-);
-CREATE INDEX IF NOT EXISTS idx_programs_platform ON programs(platform);
-CREATE INDEX IF NOT EXISTS idx_programs_url ON programs(url);
-CREATE TABLE IF NOT EXISTS targets_raw (
-	id                SERIAL PRIMARY KEY,
-	program_id        INTEGER NOT NULL,
-	target            TEXT NOT NULL,
-	category          TEXT NOT NULL,
-	description       TEXT,
-	in_scope          INTEGER NOT NULL CHECK (in_scope IN (0,1)),
-	is_bbp            INTEGER NOT NULL DEFAULT 0 CHECK (is_bbp IN (0,1)),
-	first_seen_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	last_seen_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	FOREIGN KEY(program_id) REFERENCES programs(id),
-	UNIQUE(program_id, category, target)
-);
-CREATE INDEX IF NOT EXISTS idx_targets_raw_program_id ON targets_raw(program_id);
-CREATE TABLE IF NOT EXISTS targets_ai_enhanced (
-	id                   SERIAL PRIMARY KEY,
-	target_id            INTEGER NOT NULL,
-	target_ai_normalized TEXT NOT NULL,
-	category             TEXT,
-	in_scope             INTEGER,
-	first_seen_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	last_seen_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	FOREIGN KEY(target_id) REFERENCES targets_raw(id) ON DELETE CASCADE,
-	UNIQUE(target_id, target_ai_normalized)
-);
-CREATE INDEX IF NOT EXISTS idx_targets_ai_enhanced_target_id ON targets_ai_enhanced(target_id);
-CREATE TABLE IF NOT EXISTS scope_changes (
-	id                SERIAL PRIMARY KEY,
-	occurred_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	program_url       TEXT NOT NULL,
-	platform          TEXT NOT NULL,
-	handle            TEXT NOT NULL,
-	target_normalized TEXT NOT NULL,
-	target_raw        TEXT NOT NULL DEFAULT '',
-	target_ai_normalized TEXT NOT NULL DEFAULT '',
-	category          TEXT NOT NULL,
-	in_scope          INTEGER NOT NULL CHECK (in_scope IN (0,1)),
-	is_bbp            INTEGER NOT NULL DEFAULT 0 CHECK (is_bbp IN (0,1)),
-	change_type       TEXT NOT NULL CHECK (change_type IN ('added','updated','removed'))
-);
-CREATE INDEX IF NOT EXISTS idx_changes_time ON scope_changes(occurred_at);
-CREATE INDEX IF NOT EXISTS idx_changes_program ON scope_changes(program_url, occurred_at);
-`
-
 // PoolConfig holds database connection pool settings.
 type PoolConfig struct {
 	MaxOpenConns    int           // Maximum number of open connections (default: 25)
@@ -145,7 +87,7 @@ func OpenWithPool(connectionString string, pool PoolConfig) (*DB, error) {
 			return nil, fmt.Errorf("failed to connect to %s: %w", redactConnectionString(connectionString), err)
 		}
 	}
-	if _, err := db.Exec(schema); err != nil {
+	if err := applyMigrations(db); err != nil {
 		return nil, fmt.Errorf("migrating schema: %w", err)
 	}
 	return &DB{sql: db}, nil
