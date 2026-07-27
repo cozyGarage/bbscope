@@ -40,7 +40,7 @@ Thank you for your interest in contributing to bbscope! This document provides g
 # Fork the repository on GitHub, then:
 git clone https://github.com/YOUR_USERNAME/bbscope.git
 cd bbscope
-git remote add upstream https://github.com/sw33tLie/bbscope.git
+git remote add upstream https://github.com/cozyGarage/bbscope.git
 ```
 
 ---
@@ -477,8 +477,8 @@ package newplatform
 
 import (
     "context"
-    "github.com/sw33tLie/bbscope/v2/pkg/platforms"
-    "github.com/sw33tLie/bbscope/v2/pkg/scope"
+    "github.com/cozyGarage/bbscope/v2/pkg/platforms"
+    "github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 type Poller struct {
@@ -518,7 +518,7 @@ package cmd
 import (
     "github.com/spf13/cobra"
     "github.com/spf13/viper"
-    npplatform "github.com/sw33tLie/bbscope/v2/pkg/platforms/newplatform"
+    npplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/newplatform"
 )
 
 var pollNewPlatformCmd = &cobra.Command{

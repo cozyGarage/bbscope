@@ -162,7 +162,7 @@ package platforms
 
 import (
     "context"
-    "github.com/sw33tLie/bbscope/v2/pkg/scope"
+    "github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 // PollOptions configures polling behavior
@@ -206,8 +206,8 @@ package newplatform
 
 import (
     "context"
-    "github.com/sw33tLie/bbscope/v2/pkg/platforms"
-    "github.com/sw33tLie/bbscope/v2/pkg/scope"
+    "github.com/cozyGarage/bbscope/v2/pkg/platforms"
+    "github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 type Poller struct {
@@ -257,7 +257,7 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 ### Opening Database Connection
 
 ```go
-import "github.com/sw33tLie/bbscope/v2/pkg/storage"
+import "github.com/cozyGarage/bbscope/v2/pkg/storage"
 
 // Open connects to PostgreSQL and runs migrations
 db, err := storage.Open("postgres://user:pass@localhost/bbscope?sslmode=disable")
@@ -316,7 +316,7 @@ type ListOptions struct {
 ### Configuration
 
 ```go
-import "github.com/sw33tLie/bbscope/v2/pkg/ai"
+import "github.com/cozyGarage/bbscope/v2/pkg/ai"
 
 cfg := ai.Config{
     Provider:       "openai",

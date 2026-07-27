@@ -597,12 +597,12 @@ GOOS=windows GOARCH=amd64 go build -ldflags="-w -s" -o dist/bbscope-windows-amd6
 
 ```bash
 # Build and push
-docker build -t ghcr.io/sw33tlie/bbscope:v2.1.0 .
-docker push ghcr.io/sw33tlie/bbscope:v2.1.0
+docker build -t ghcr.io/cozygarage/bbscope:v2.1.0 .
+docker push ghcr.io/cozygarage/bbscope:v2.1.0
 
 # Tag as latest
-docker tag ghcr.io/sw33tlie/bbscope:v2.1.0 ghcr.io/sw33tlie/bbscope:latest
-docker push ghcr.io/sw33tlie/bbscope:latest
+docker tag ghcr.io/cozygarage/bbscope:v2.1.0 ghcr.io/cozygarage/bbscope:latest
+docker push ghcr.io/cozygarage/bbscope:latest
 ```
 
 ### Pre-release Checklist

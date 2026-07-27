@@ -25,7 +25,7 @@ This guide helps you diagnose and resolve common issues when using bbscope.
 
 **Error:**
 ```
-go: module github.com/sw33tLie/bbscope/v2: no matching versions
+go: module github.com/cozyGarage/bbscope/v2: no matching versions
 ```
 
 **Solutions:**
@@ -657,7 +657,7 @@ docker logs bbscope-db
 
 If you can't resolve an issue:
 
-1. Check existing [GitHub Issues](https://github.com/sw33tLie/bbscope/issues)
+1. Check existing [GitHub Issues](https://github.com/cozyGarage/bbscope/issues)
 2. Create a new issue with:
    - bbscope version (`bbscope --version` or commit)
    - Full error message

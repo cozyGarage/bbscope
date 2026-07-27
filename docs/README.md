@@ -15,6 +15,9 @@ Welcome to the bbscope documentation! This guide will help you understand, use, 
 | [Troubleshooting](TROUBLESHOOTING.md) | Common issues and solutions |
 | [Improvements](IMPROVEMENTS.md) | Suggested enhancements and roadmap |
 | [Glossary](GLOSSARY.md) | Terminology and concepts |
+| [TUI Quick Reference](TUI_QUICKREF.md) | Interactive terminal UI keyboard shortcuts |
+| [TUI Architecture](TUI_ARCHITECTURE.md) | Terminal UI implementation notes |
+| [Migration](MIGRATION.md) | `sw33tLie` → `cozyGarage` namespace migration |
 
 ---
 
@@ -43,10 +46,10 @@ It helps bug bounty hunters:
 
 ```bash
 # Using Go
-go install github.com/sw33tLie/bbscope/v2@latest
+go install github.com/cozyGarage/bbscope/v2@latest
 
 # Using Docker
-docker pull ghcr.io/sw33tlie/bbscope:latest
+docker pull ghcr.io/cozygarage/bbscope:latest
 ```
 
 ### First Run
@@ -174,6 +177,8 @@ bbscope
 │       ├── urls            # HTTP/HTTPS URLs
 │       ├── cidrs           # CIDR ranges
 │       └── ips             # IP addresses
+├── daemon                  # Scheduled background polling
+├── tui                     # Interactive terminal UI
 └── version                 # Version information
 ```
 
@@ -209,7 +214,7 @@ bbscope db get cidrs > cidrs.txt
 
 ## Getting Help
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/sw33tLie/bbscope/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/cozyGarage/bbscope/issues)
 - **Troubleshooting Guide**: [Common problems and solutions](TROUBLESHOOTING.md)
 - **Website**: [bbscope.com](https://bbscope.com) - Public scope browser
 
