@@ -15,6 +15,10 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
+// apiBaseURL is the Intigriti researcher API root. It is a package variable so
+// tests can point the poller at a local httptest server.
+var apiBaseURL = "https://api.intigriti.com/external/researcher/v1"
+
 type Poller struct {
 	token string
 	// mu guards the handle lookup maps, which are populated by
@@ -51,7 +55,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		}
 		res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
 			Method:  "GET",
-			URL:     fmt.Sprintf("https://api.intigriti.com/external/researcher/v1/programs?statusId=3&limit=%d&offset=%d", limit, offset),
+			URL:     fmt.Sprintf(apiBaseURL+"/programs?statusId=3&limit=%d&offset=%d", limit, offset),
 			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
 		}, nil)
 
@@ -132,7 +136,7 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 		var err error
 		res, err = whttp.SendHTTPRequest(&whttp.WHTTPReq{
 			Method:  "GET",
-			URL:     "https://api.intigriti.com/external/researcher/v1/programs/" + id,
+			URL:     apiBaseURL + "/programs/" + id,
 			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
 		}, nil)
 		if err != nil {

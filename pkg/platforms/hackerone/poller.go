@@ -16,6 +16,10 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
+// apiBaseURL is the HackerOne API root. It is a package variable so tests can
+// point the poller at a local httptest server.
+var apiBaseURL = "https://api.hackerone.com"
+
 // Poller adapts existing H1 code to the generic PlatformPoller interface.
 type Poller struct {
 	authB64 string
@@ -39,7 +43,7 @@ func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) err
 
 func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOptions) ([]string, error) {
 	var handles []string
-	currentURL := "https://api.hackerone.com/v1/hackers/programs?page%5Bsize%5D=100"
+	currentURL := apiBaseURL + "/v1/hackers/programs?page%5Bsize%5D=100"
 	const maxListRetries = 5
 	for {
 		if err := ctx.Err(); err != nil {
@@ -108,7 +112,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 
 func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts platforms.PollOptions) (scope.ProgramData, error) {
 	pData := scope.ProgramData{Url: "https://hackerone.com/" + handle}
-	currentPageURL := "https://api.hackerone.com/v1/hackers/programs/" + handle + "/structured_scopes?page%5Bnumber%5D=1&page%5Bsize%5D=100"
+	currentPageURL := apiBaseURL + "/v1/hackers/programs/" + handle + "/structured_scopes?page%5Bnumber%5D=1&page%5Bsize%5D=100"
 	categoryStrings := scope.GetAllStringsForCategories(opts.Categories)
 
 	for {
