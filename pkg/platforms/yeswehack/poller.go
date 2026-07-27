@@ -15,6 +15,10 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
+// apiBaseURL is the YesWeHack API root. It is a package variable so tests can
+// point the poller at a local httptest server.
+var apiBaseURL = "https://api.yeswehack.com"
+
 type Poller struct{ token string }
 
 func NewPoller(token string) *Poller { return &Poller{token: token} }
@@ -45,7 +49,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 	for page <= nb_pages {
 		res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
 			Method:  "GET",
-			URL:     "https://api.yeswehack.com/programs" + "?page=" + strconv.Itoa(page),
+			URL:     apiBaseURL + "/programs" + "?page=" + strconv.Itoa(page),
 			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
 		}, nil)
 
@@ -78,7 +82,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 }
 
 func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts platforms.PollOptions) (scope.ProgramData, error) {
-	programAPIURL := "https://api.yeswehack.com/programs/" + handle
+	programAPIURL := apiBaseURL + "/programs/" + handle
 	programWebURL := "https://yeswehack.com/programs/" + handle
 	pData := scope.ProgramData{Url: programWebURL}
 
@@ -147,7 +151,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 		}
 	}
 
-	loginURL := "https://api.yeswehack.com/login"
+	loginURL := apiBaseURL + "/login"
 	loginPayload, err := json.Marshal(map[string]string{"email": email, "password": password})
 	if err != nil {
 		return "", fmt.Errorf("building login payload: %w", err)
@@ -190,7 +194,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 			return "", fmt.Errorf("failed to generate TOTP: %w", err)
 		}
 
-		totpURL := "https://api.yeswehack.com/account/totp"
+		totpURL := apiBaseURL + "/account/totp"
 		totpPayload := fmt.Sprintf(`{"token":"%s","code":"%s"}`, totpToken, code)
 
 		totpRes, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
