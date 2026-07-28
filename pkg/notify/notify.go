@@ -93,7 +93,7 @@ func LoadNotifiers(cfg *Config) []Notifier {
 		notifiers = append(notifiers, NewTelegramNotifier(cfg.Telegram))
 	}
 
-	if cfg.Email != nil && cfg.Email.SMTPHost != "" {
+	if cfg.Email != nil && cfg.Email.SMTPHost != "" && len(cfg.Email.To) > 0 {
 		notifiers = append(notifiers, NewEmailNotifier(cfg.Email))
 	}
 

@@ -21,9 +21,7 @@ func GenerateTOTP(secret string, t time.Time) (string, error) {
 	// Ensure key is wiped after use for security
 	defer secureWipe(key)
 
-	if digits <= 0 {
-		digits = 6
-	}
+	digits = clampTOTPDigits(digits)
 	step := uint64(t.Unix() / 30) //nolint:gosec // safe conversion for TOTP time step
 	var msg [8]byte
 	binary.BigEndian.PutUint64(msg[:], step)
@@ -42,6 +40,18 @@ func GenerateTOTP(secret string, t time.Time) (string, error) {
 	code = code % mod
 	format := fmt.Sprintf("%%0%dd", digits)
 	return fmt.Sprintf(format, code), nil
+}
+
+// clampTOTPDigits keeps digit counts in the RFC-common range (6–8).
+// Unbounded values overflow uint32 modulus and can panic on digits==32 (mod==0).
+func clampTOTPDigits(digits int) int {
+	if digits < 6 {
+		return 6
+	}
+	if digits > 8 {
+		return 8
+	}
+	return digits
 }
 
 // secureWipe zeros out a byte slice to prevent sensitive data from lingering in memory.

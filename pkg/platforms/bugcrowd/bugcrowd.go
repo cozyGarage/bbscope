@@ -206,6 +206,9 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 	if redirectUrl == "" {
 		return "", errors.New("no redirect URL found in response")
 	}
+	if err := validateBugcrowdRedirectURL(redirectUrl); err != nil {
+		return "", err
+	}
 
 	redirectRes, err := rateLimitedSendHTTPRequest(
 		&whttp.WHTTPReq{
@@ -233,6 +236,23 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 	}
 
 	return "", errors.New("unable to obtain session cookie")
+}
+
+// validateBugcrowdRedirectURL restricts post-login redirects to bugcrowd.com hosts
+// so session cookies are not sent to an attacker-controlled URL.
+func validateBugcrowdRedirectURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid redirect URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("redirect URL must use https, got %q", u.Scheme)
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "bugcrowd.com" || strings.HasSuffix(host, ".bugcrowd.com") {
+		return nil
+	}
+	return fmt.Errorf("redirect URL host %q is not an allowed bugcrowd.com host", host)
 }
 
 func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool) ([]string, error) {
@@ -382,18 +402,21 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 		} else {
 			utils.Log.Warn("data-api-endpoints attribute not found at https://bugcrowd.com"+handle, res.StatusCode)
 		}
+		return "", nil
 	}
 
-	return gjson.Get(apiEndpointsJSON, "engagementBriefApi.getBriefVersionDocument").String() + ".json", nil
+	path := gjson.Get(apiEndpointsJSON, "engagementBriefApi.getBriefVersionDocument").String()
+	if path == "" {
+		return "", nil
+	}
+	return path + ".json", nil
 }
 
 func extractScopeFromEngagement(getBriefVersionDocument string, token string, pData *scope.ProgramData) (err error) {
-	if getBriefVersionDocument == ".json" {
-		utils.Log.Warn("Compliance required! Empty Extraction URL (Skipping)...")
-		pData.InScope = append(pData.InScope, scope.ScopeElement{
-			Target:      "2FA_REQUIRED",
-			Description: "Two-Factor Authentication is required to access this program.",
-		})
+	if getBriefVersionDocument == "" || getBriefVersionDocument == ".json" {
+		// Missing brief endpoint usually means compliance gate / 2FA / HTML change.
+		// Do not invent sentinel targets that would pollute storage and notifications.
+		utils.Log.Warn("Compliance required or brief URL missing; skipping engagement scope extraction")
 		return nil
 	}
 	res, err := rateLimitedSendHTTPRequest(
@@ -489,7 +512,7 @@ func extractScopeFromTargetGroups(url string, categories string, token string, p
 	}
 
 	if noScopeTable {
-		pData.InScope = append(pData.InScope, scope.ScopeElement{Target: "NO_IN_SCOPE_TABLE", Description: "", Category: ""})
+		utils.Log.Warn("No in-scope target table found; skipping sentinel target")
 	}
 
 	return nil

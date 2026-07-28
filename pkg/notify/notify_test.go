@@ -154,3 +154,20 @@ func TestLoadNotifiers(t *testing.T) {
 		t.Fatal("LoadNotifiers(nil) should return nil")
 	}
 }
+
+func TestLoadNotifiersSkipsEmailWithoutRecipients(t *testing.T) {
+	cfg := &Config{
+		Email: &EmailConfig{SMTPHost: "smtp.example.com", To: nil},
+	}
+	if got := LoadNotifiers(cfg); len(got) != 0 {
+		t.Fatalf("expected email without recipients to be skipped, got %d notifiers", len(got))
+	}
+}
+
+func TestEmailNotifierEmptyTo(t *testing.T) {
+	n := NewEmailNotifier(&EmailConfig{SMTPHost: "smtp.example.com", From: "a@b.c", To: nil})
+	err := n.Send(context.Background(), ChangeEvent{Type: "added", Target: "x.example"})
+	if err == nil {
+		t.Fatal("expected error for empty recipients")
+	}
+}

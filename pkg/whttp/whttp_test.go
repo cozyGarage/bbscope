@@ -18,6 +18,8 @@ func TestIsSensitiveHeader(t *testing.T) {
 		{"AUTHORIZATION uppercase", "AUTHORIZATION", true},
 		{"cookie", "cookie", true},
 		{"Cookie", "Cookie", true},
+		{"set-cookie", "Set-Cookie", true},
+		{"proxy-authorization", "Proxy-Authorization", true},
 		{"x-csrf-token", "x-csrf-token", true},
 		{"X-Csrf-Token", "X-Csrf-Token", true},
 		{"x-api-key", "x-api-key", true},
@@ -36,6 +38,15 @@ func TestIsSensitiveHeader(t *testing.T) {
 				t.Errorf("isSensitiveHeader(%q) = %v, want %v", tt.header, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRedactDebugBody(t *testing.T) {
+	if got := redactDebugBody(`{"password":"secret"}`); got != "[REDACTED BODY]" {
+		t.Fatalf("expected redacted auth body, got %q", got)
+	}
+	if got := redactDebugBody(`{"ok":true}`); got != `{"ok":true}` {
+		t.Fatalf("expected non-sensitive body unchanged, got %q", got)
 	}
 }
 

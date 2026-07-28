@@ -197,3 +197,11 @@ func TestPoolConfigCustomValues(t *testing.T) {
 		t.Errorf("MaxIdleConns = %d, want 10", cfg.MaxIdleConns)
 	}
 }
+
+func TestEscapeLikePattern(t *testing.T) {
+	got := escapeLikePattern(`100%_done\now`)
+	want := `100\%\_done\\now`
+	if got != want {
+		t.Fatalf("escapeLikePattern = %q, want %q", got, want)
+	}
+}

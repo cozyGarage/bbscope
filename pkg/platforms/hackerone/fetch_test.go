@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
@@ -97,6 +98,37 @@ func TestFetchProgramScope(t *testing.T) {
 	pd, _ = p.FetchProgramScope(context.Background(), "acme", platforms.PollOptions{Categories: "url"})
 	if len(pd.InScope) != 1 || pd.InScope[0].Target != "in.example.com" {
 		t.Fatalf("expected only the URL in-scope target, got %+v", pd.InScope)
+	}
+}
+
+func TestAllowSameOriginNextURL(t *testing.T) {
+	got, err := allowSameOriginNextURL("https://api.hackerone.com", "https://api.hackerone.com/v1/hackers/programs?page=2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "page=2") {
+		t.Fatalf("unexpected allowed URL: %q", got)
+	}
+
+	if _, err := allowSameOriginNextURL("https://api.hackerone.com", "https://evil.example/steal"); err == nil {
+		t.Fatal("expected off-origin pagination URL to be rejected")
+	}
+}
+
+func TestListProgramHandlesRejectsOffOriginNext(t *testing.T) {
+	page1 := `{"data":[
+		{"attributes":{"handle":"open-bounty","state":"public_mode","submission_state":"open","offers_bounties":true}}
+	],"links":{"next":"https://evil.example/v1/hackers/programs?page=2"}}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, page1)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := NewPoller("user", "token")
+	if _, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
+		t.Fatal("expected off-origin links.next to fail")
 	}
 }
 

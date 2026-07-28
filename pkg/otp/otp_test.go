@@ -108,3 +108,26 @@ func TestGenerateTOTP_8Digits(t *testing.T) {
 		t.Errorf("GenerateTOTP() code length = %d, want 8", len(code))
 	}
 }
+
+func TestClampTOTPDigits(t *testing.T) {
+	if got := clampTOTPDigits(0); got != 6 {
+		t.Fatalf("clamp 0 = %d, want 6", got)
+	}
+	if got := clampTOTPDigits(32); got != 8 {
+		t.Fatalf("clamp 32 = %d, want 8", got)
+	}
+	if got := clampTOTPDigits(7); got != 7 {
+		t.Fatalf("clamp 7 = %d, want 7", got)
+	}
+}
+
+func TestGenerateTOTP_HugeDigitsNoPanic(t *testing.T) {
+	// Previously digits=32 caused mod==0 and panic on code%mod.
+	code, err := GenerateTOTP("32 JBSWY3DPEHPK3PXP", time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("GenerateTOTP: %v", err)
+	}
+	if len(code) != 8 {
+		t.Fatalf("expected clamped 8-digit code, got %q", code)
+	}
+}

@@ -781,8 +781,11 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 }
 
 // SetProgramIgnoredStatus sets the is_ignored flag for a program.
+// programURL is treated as a substring pattern; LIKE metacharacters (% and _)
+// in the user input are escaped so they match literally.
 func (d *DB) SetProgramIgnoredStatus(ctx context.Context, programURL string, ignored bool) error {
-	res, err := d.sql.ExecContext(ctx, "UPDATE programs SET is_ignored = $1 WHERE url LIKE $2", boolToInt(ignored), fmt.Sprintf("%%%s%%", programURL))
+	pattern := "%" + escapeLikePattern(programURL) + "%"
+	res, err := d.sql.ExecContext(ctx, "UPDATE programs SET is_ignored = $1 WHERE url LIKE $2 ESCAPE '\\'", boolToInt(ignored), pattern)
 	if err != nil {
 		return err
 	}
@@ -794,6 +797,12 @@ func (d *DB) SetProgramIgnoredStatus(ctx context.Context, programURL string, ign
 		return fmt.Errorf("no program found matching URL pattern: %s", programURL)
 	}
 	return nil
+}
+
+// escapeLikePattern escapes \, %, and _ so user input is matched literally in LIKE.
+func escapeLikePattern(s string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(s)
 }
 
 // GetIgnoredPrograms returns a map of program URLs that are marked as ignored for a specific platform.

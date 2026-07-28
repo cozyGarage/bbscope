@@ -105,16 +105,22 @@ func runImport(cmd *cobra.Command, args []string) error {
 }
 
 func parseimportJSON(r io.Reader) ([]storage.Entry, error) {
-	var data ExportData // reuse struct from export
-	if err := json.NewDecoder(r).Decode(&data); err != nil {
-		// Try array fallback
-		var entries []storage.Entry
-		if err2 := json.NewDecoder(r).Decode(&entries); err2 == nil {
-			return entries, nil
-		}
+	raw, err := io.ReadAll(r)
+	if err != nil {
 		return nil, err
 	}
-	return data.Entries, nil
+
+	var data ExportData // reuse struct from export
+	if err := json.Unmarshal(raw, &data); err == nil {
+		return data.Entries, nil
+	}
+
+	// Fallback: bare JSON array of entries
+	var entries []storage.Entry
+	if err2 := json.Unmarshal(raw, &entries); err2 == nil {
+		return entries, nil
+	}
+	return nil, fmt.Errorf("invalid JSON import: expected export object or entry array")
 }
 
 func parseimportCSV(r io.Reader) ([]storage.Entry, error) {

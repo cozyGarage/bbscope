@@ -14,6 +14,7 @@ import (
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/ai"
+	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	bcplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/bugcrowd"
 	h1platform "github.com/cozyGarage/bbscope/v2/pkg/platforms/hackerone"
@@ -21,6 +22,7 @@ import (
 	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
+	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
 // pollCmd implements: bbscope poll
@@ -42,22 +44,26 @@ var pollCmd = &cobra.Command{
 		}
 
 		proxyURL, _ := cmd.Flags().GetString("proxy")
-		var pollers []platforms.PlatformPoller
-
-		// H1
-		h1User := viper.GetString("hackerone.username")
-		h1Token := viper.GetString("hackerone.token")
-		if h1User != "" && h1Token != "" {
-			h1Poller := h1platform.NewPoller(h1User, h1Token)
-			pollers = append(pollers, h1Poller)
-		} else {
-			utils.Log.Info("Skipping HackerOne: credentials not found in config.")
+		if proxyURL != "" {
+			if err := whttp.SetupProxy(proxyURL); err != nil {
+				return err
+			}
 		}
 
-		// Bugcrowd
-		bcEmail := viper.GetString("bugcrowd.email")
-		bcPass := viper.GetString("bugcrowd.password")
-		bcOTP := viper.GetString("bugcrowd.otpsecret")
+		var pollers []platforms.PlatformPoller
+
+		// Prefer keychain (via credentials.Get) with config-file fallback — matches poll subcommands.
+		h1User := credentials.Get("hackerone.username")
+		h1Token := credentials.Get("hackerone.token")
+		if h1User != "" && h1Token != "" {
+			pollers = append(pollers, h1platform.NewPoller(h1User, h1Token))
+		} else {
+			utils.Log.Info("Skipping HackerOne: credentials not found in keychain or config.")
+		}
+
+		bcEmail := credentials.Get("bugcrowd.email")
+		bcPass := credentials.Get("bugcrowd.password")
+		bcOTP := credentials.Get("bugcrowd.otpsecret")
 		if bcEmail != "" && bcPass != "" && bcOTP != "" {
 			bcPoller := &bcplatform.Poller{}
 			authCfg := platforms.AuthConfig{Email: bcEmail, Password: bcPass, OtpSecret: bcOTP, Proxy: proxyURL}
@@ -67,11 +73,10 @@ var pollCmd = &cobra.Command{
 				pollers = append(pollers, bcPoller)
 			}
 		} else {
-			utils.Log.Info("Skipping Bugcrowd: email, password, or otpsecret not found in config.")
+			utils.Log.Info("Skipping Bugcrowd: email, password, or otpsecret not found in keychain or config.")
 		}
 
-		// Intigriti
-		itToken := viper.GetString("intigriti.token")
+		itToken := credentials.Get("intigriti.token")
 		if itToken != "" {
 			itPoller := itplatform.NewPoller()
 			if err := itPoller.Authenticate(cmd.Context(), platforms.AuthConfig{Token: itToken, Proxy: proxyURL}); err != nil {
@@ -80,13 +85,12 @@ var pollCmd = &cobra.Command{
 				pollers = append(pollers, itPoller)
 			}
 		} else {
-			utils.Log.Info("Skipping Intigriti: token not found in config.")
+			utils.Log.Info("Skipping Intigriti: token not found in keychain or config.")
 		}
 
-		// YesWeHack
-		ywhEmail := viper.GetString("yeswehack.email")
-		ywhPass := viper.GetString("yeswehack.password")
-		ywhOTP := viper.GetString("yeswehack.otpsecret")
+		ywhEmail := credentials.Get("yeswehack.email")
+		ywhPass := credentials.Get("yeswehack.password")
+		ywhOTP := credentials.Get("yeswehack.otpsecret")
 		if ywhEmail != "" && ywhPass != "" && ywhOTP != "" {
 			ywhPoller := &ywhplatform.Poller{}
 			authCfg := platforms.AuthConfig{Email: ywhEmail, Password: ywhPass, OtpSecret: ywhOTP, Proxy: proxyURL}
@@ -96,11 +100,11 @@ var pollCmd = &cobra.Command{
 				pollers = append(pollers, ywhPoller)
 			}
 		} else {
-			utils.Log.Info("Skipping YesWeHack: email, password, or otpsecret not found in config.")
+			utils.Log.Info("Skipping YesWeHack: email, password, or otpsecret not found in keychain or config.")
 		}
 
 		if len(pollers) == 0 {
-			utils.Log.Info("No platforms to poll. Configure credentials in ~/.bbscope.yaml")
+			utils.Log.Info("No platforms to poll. Set credentials with: bbscope config set <key>")
 			return nil
 		}
 
@@ -244,7 +248,10 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		// Use concurrent processing with worker pool pattern
 		polledProgramURLs, err := processProgramsConcurrently(ctx, cmd, p, handles, opts, useDB, db, ignoredPrograms, isFirstRunForPlatform, concurrency, aiNormalizer)
 		if err != nil {
-			return err
+			// Do not abort remaining platforms, and skip SyncPlatformPrograms: a partial
+			// success list would incorrectly disable programs that only failed to fetch.
+			utils.Log.Warnf("Some program fetches failed for %s: %v; skipping platform sync for this run", p.Name(), err)
+			continue
 		}
 
 		if useDB {
