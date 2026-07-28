@@ -140,7 +140,7 @@ func isSensitiveHeader(name string) bool {
 **Fix implemented:**
 - Added `validateDatabaseName()` function with strict regex pattern `^[a-zA-Z_][a-zA-Z0-9_]*$`
 - Database name length limited to 1-63 characters
-- Using `pq.QuoteIdentifier()` for safe SQL quoting
+- Using `pgx.Identifier.Sanitize()` for safe SQL quoting
 - Connection string passwords are now redacted in error messages
 
 ```go
@@ -234,7 +234,7 @@ Run `go list -m all | nancy sleuth` or `govulncheck` to check for known vulnerab
 |------------|---------|-------|
 | `golang.org/x/net` | v0.44.0 | Keep updated |
 | `golang.org/x/crypto` | (indirect) | Keep updated |
-| `lib/pq` | v1.10.9 | PostgreSQL driver |
+| `jackc/pgx/v5` | v5.7.4 | PostgreSQL driver (`database/sql` stdlib) |
 
 **Recommendations**:
 1. Set up automated dependency vulnerability scanning (Dependabot, Snyk)

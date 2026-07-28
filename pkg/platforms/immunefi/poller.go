@@ -14,7 +14,10 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
-const maxRetries = 20
+// maxRetries and sleepFunc are package variables so httptest tests can avoid
+// long exponential backoff against a local server.
+var maxRetries = 20
+var sleepFunc = time.Sleep
 
 type Poller struct{}
 
@@ -41,7 +44,7 @@ func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
 		if err != nil {
 			lastErr = err
 			// Network error, retry with backoff
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			sleepFunc(time.Duration(attempt+1) * time.Second)
 			continue
 		}
 
@@ -51,7 +54,7 @@ func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
 			if backoff > 30*time.Second {
 				backoff = 30 * time.Second
 			}
-			time.Sleep(backoff)
+			sleepFunc(backoff)
 			continue
 		}
 
@@ -59,7 +62,8 @@ func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
 			return res, nil
 		}
 
-		// Other error status, return it
+		// Other error status — keep retrying (Immunefi occasionally serves
+		// transient non-2xx responses during RSC navigations).
 		lastErr = fmt.Errorf("HTTP %d for %s", res.StatusCode, url)
 	}
 

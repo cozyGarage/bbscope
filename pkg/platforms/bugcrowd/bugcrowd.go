@@ -30,6 +30,14 @@ const (
 	WAF_BANNED_ERROR = "you are temporarily WAF banned, change IP or wait a few hours"
 )
 
+// apiBaseURL is the Bugcrowd site root. It is a package variable so tests can
+// point listing/scope helpers at a local httptest server.
+var apiBaseURL = "https://bugcrowd.com"
+
+// rateLimitInterval is the minimum delay between rate-limited HTTP requests.
+// Tests may set this to 0 to avoid sleeping against httptest.
+var rateLimitInterval = 1 * time.Second
+
 // Rate-limiting types and global channel
 type rateLimitedResult struct {
 	res *whttp.WHTTPRes
@@ -51,10 +59,12 @@ func init() {
 }
 
 func rateLimitedRequestWorker() {
-	ticker := time.NewTicker(1 * time.Second) // one request per second (otherwise bugcrowd WAF bans us)
-	defer ticker.Stop()
+	// One request per second by default (otherwise Bugcrowd WAF bans us).
+	// Interval is read each iteration so tests can disable the delay.
 	for r := range rateLimitRequestChan {
-		<-ticker.C // Wait for ticker; limits to one request per second
+		if interval := rateLimitInterval; interval > 0 {
+			time.Sleep(interval)
+		}
 		res, err := whttp.SendHTTPRequest(r.req, r.client)
 		r.resultChan <- rateLimitedResult{res: res, err: err}
 	}
@@ -262,7 +272,7 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 	fetchedPrograms := make(map[string]bool)
 	allHandlersFoundCounter := 0
 
-	listEndpointURL := "https://bugcrowd.com/engagements.json?category=" + engagementType + "&sort_by=promoted&sort_direction=desc&page="
+	listEndpointURL := apiBaseURL + "/engagements.json?category=" + engagementType + "&sort_by=promoted&sort_direction=desc&page="
 
 	for {
 		var res *whttp.WHTTPRes
@@ -336,7 +346,7 @@ func GetProgramScope(handle string, categories string, token string) (pData scop
 		handle = strings.TrimPrefix(handle, "/engagements/")
 	}
 
-	pData.Url = "https://bugcrowd.com/" + strings.TrimPrefix(handle, "/")
+	pData.Url = apiBaseURL + "/" + strings.TrimPrefix(handle, "/")
 
 	if isEngagement {
 		var getBriefVersionDocument string
@@ -365,7 +375,7 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 	res, err := rateLimitedSendHTTPRequest(
 		&whttp.WHTTPReq{
 			Method: "GET",
-			URL:    "https://bugcrowd.com" + handle,
+			URL:    apiBaseURL + handle,
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Cookie", Value: "_bugcrowd_session=" + token},
 				{Name: "User-Agent", Value: USER_AGENT},
@@ -398,9 +408,9 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 	if !exists {
 		// This will be triggered when using a non-2FA token and
 		if strings.Contains(res.BodyString, "ResearcherEngagementCompliance") {
-			utils.Log.Warn("Compliance required! Skipping: ", "https://bugcrowd.com"+handle)
+			utils.Log.Warn("Compliance required! Skipping: ", apiBaseURL+handle)
 		} else {
-			utils.Log.Warn("data-api-endpoints attribute not found at https://bugcrowd.com"+handle, res.StatusCode)
+			utils.Log.Warn("data-api-endpoints attribute not found at "+apiBaseURL+handle, res.StatusCode)
 		}
 		return "", nil
 	}
@@ -422,7 +432,7 @@ func extractScopeFromEngagement(getBriefVersionDocument string, token string, pD
 	res, err := rateLimitedSendHTTPRequest(
 		&whttp.WHTTPReq{
 			Method: "GET",
-			URL:    "https://bugcrowd.com" + getBriefVersionDocument,
+			URL:    apiBaseURL + getBriefVersionDocument,
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Cookie", Value: "_bugcrowd_session=" + token},
 				{Name: "User-Agent", Value: USER_AGENT},
@@ -522,7 +532,7 @@ func extractScopeFromTargetTable(scopeTableURL string, categories string, token 
 	res, err := rateLimitedSendHTTPRequest(
 		&whttp.WHTTPReq{
 			Method: "GET",
-			URL:    "https://bugcrowd.com" + scopeTableURL,
+			URL:    apiBaseURL + scopeTableURL,
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Cookie", Value: "_bugcrowd_session=" + token},
 				{Name: "User-Agent", Value: USER_AGENT},

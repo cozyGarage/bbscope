@@ -488,25 +488,25 @@ When platforms change their API:
 
 When modifying the database schema:
 
-1. Update schema in `pkg/storage/storage.go`
-2. Schema is auto-migrated on connection
-3. For breaking changes, consider migration strategy
+1. Add an ordered migration step in `pkg/storage/schema.go` (`schema_migrations`)
+2. Schema is auto-migrated on connection via `applyMigrations`
+3. For breaking changes, prefer additive migrations that existing DBs can apply safely
 
 ```go
-// Example: Adding a new column
-const schema = `
-CREATE TABLE IF NOT EXISTS programs (
-    -- existing columns...
-    new_column TEXT DEFAULT ''
-);
--- Add column if not exists
-DO $$ BEGIN
-    ALTER TABLE programs ADD COLUMN new_column TEXT DEFAULT '';
-EXCEPTION
-    WHEN duplicate_column THEN NULL;
-END $$;
-`
+// Example: Adding a new column as a migration step in schema.go
+{
+    version: 3,
+    name:    "add_programs_new_column",
+    up: `
+ALTER TABLE programs ADD COLUMN IF NOT EXISTS new_column TEXT DEFAULT '';
+`,
+}
 ```
+
+### PostgreSQL driver
+
+bbscope uses [`pgx`](https://github.com/jackc/pgx) via `database/sql` (`github.com/jackc/pgx/v5/stdlib`, driver name `pgx`).
+`lib/pq` was replaced because it is in maintenance mode; the stdlib wrapper keeps the existing `database/sql` call sites while still supporting PostgreSQL arrays (`pgtype.FlatArray`).
 
 ### Query Optimization
 

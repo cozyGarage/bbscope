@@ -16,6 +16,7 @@ higher-level, human-curated changes.
   changes upgrade existing databases safely.
 - `TEST_DB_URL`-gated PostgreSQL integration tests for the storage layer, plus
   broader unit tests for the AI, notify, wildcards, and poll-orchestration code.
+- httptest-backed Bugcrowd and Immunefi poller tests (completing provider coverage).
 - Dependabot configuration and a Codecov coverage gate.
 - Project meta: `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.editorconfig`, issue and
   pull-request templates.
@@ -23,6 +24,10 @@ higher-level, human-curated changes.
 ### Changed
 - Polling now honors context cancelation (Ctrl-C stops in-flight work).
 - `UpsertProgramEntries` runs as a single atomic transaction.
+- Split `pkg/storage` into `storage.go` / `schema.go` / `upsert.go` /
+  `queries.go` / `programs.go` (no behavior change).
+- Migrated the PostgreSQL driver from `lib/pq` to `jackc/pgx/v5` via
+  `database/sql` (`pgx/stdlib`), keeping Go 1.24.
 - HTTP client caps response bodies at 100 MiB; the `--proxy` transport uses a
   modern TLS 1.2 floor instead of pinning TLS 1.1.
 - Upgraded `cobra` (1.2.1 → 1.10.x) and `viper` (1.8.1 → 1.21.x); pinned
