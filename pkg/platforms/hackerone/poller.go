@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -102,10 +103,15 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			handles = append(handles, handle)
 		}
 
-		currentURL = gjson.Get(res.BodyString, "links.next").Str
-		if currentURL == "" {
+		nextURL := gjson.Get(res.BodyString, "links.next").Str
+		if nextURL == "" {
 			break
 		}
+		allowed, err := allowSameOriginNextURL(apiBaseURL, nextURL)
+		if err != nil {
+			return nil, fmt.Errorf("rejecting pagination link: %w", err)
+		}
+		currentURL = allowed
 	}
 	return handles, nil
 }
@@ -184,11 +190,39 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 		}
 
 		nextPageURL := gjson.Get(res.BodyString, "links.next").Str
-		if nextPageURL != "" {
-			currentPageURL = nextPageURL
-		} else {
+		if nextPageURL == "" {
 			break
 		}
+		allowed, err := allowSameOriginNextURL(apiBaseURL, nextPageURL)
+		if err != nil {
+			return scope.ProgramData{}, fmt.Errorf("rejecting pagination link: %w", err)
+		}
+		currentPageURL = allowed
 	}
 	return pData, nil
+}
+
+// allowSameOriginNextURL ensures pagination links stay on the HackerOne API host
+// so Basic auth credentials are never sent to an unexpected origin.
+func allowSameOriginNextURL(base, next string) (string, error) {
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("invalid API base URL: %w", err)
+	}
+	nextURL, err := url.Parse(next)
+	if err != nil {
+		return "", fmt.Errorf("invalid pagination URL: %w", err)
+	}
+	if !nextURL.IsAbs() {
+		nextURL = baseURL.ResolveReference(nextURL)
+	}
+	if !strings.EqualFold(nextURL.Scheme, "https") && !strings.EqualFold(nextURL.Scheme, "http") {
+		return "", fmt.Errorf("unsupported pagination URL scheme %q", nextURL.Scheme)
+	}
+	// httptest tests and some proxies use http; production apiBaseURL is https.
+	// Always require host to match the configured API host.
+	if !strings.EqualFold(nextURL.Host, baseURL.Host) {
+		return "", fmt.Errorf("pagination URL host %q does not match API host %q", nextURL.Host, baseURL.Host)
+	}
+	return nextURL.String(), nil
 }

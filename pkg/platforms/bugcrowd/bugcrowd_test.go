@@ -1,6 +1,7 @@
 package bugcrowd
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -42,5 +43,23 @@ func TestWAFBannedErrorMessage(t *testing.T) {
 	expected := "you are temporarily WAF banned, change IP or wait a few hours"
 	if WAF_BANNED_ERROR != expected {
 		t.Errorf("WAF_BANNED_ERROR = %v, want %v", WAF_BANNED_ERROR, expected)
+	}
+	if !strings.Contains(WAF_BANNED_ERROR, "WAF") {
+		t.Errorf("WAF_BANNED_ERROR should mention WAF, got: %s", WAF_BANNED_ERROR)
+	}
+}
+
+func TestValidateBugcrowdRedirectURL(t *testing.T) {
+	if err := validateBugcrowdRedirectURL("https://bugcrowd.com/home"); err != nil {
+		t.Fatalf("bugcrowd.com should be allowed: %v", err)
+	}
+	if err := validateBugcrowdRedirectURL("https://identity.bugcrowd.com/login"); err != nil {
+		t.Fatalf("identity.bugcrowd.com should be allowed: %v", err)
+	}
+	if err := validateBugcrowdRedirectURL("https://evil.example/phish"); err == nil {
+		t.Fatal("off-origin redirect should be rejected")
+	}
+	if err := validateBugcrowdRedirectURL("http://bugcrowd.com/home"); err == nil {
+		t.Fatal("http redirect should be rejected")
 	}
 }

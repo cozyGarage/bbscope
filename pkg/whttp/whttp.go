@@ -46,7 +46,15 @@ var GlobalDebug bool
 const maxResponseBytes = 100 << 20 // 100 MiB
 
 // sensitiveHeaders are redacted in debug output to prevent credential leakage
-var sensitiveHeaders = []string{"authorization", "cookie", "x-csrf-token", "x-api-key", "x-auth-token"}
+var sensitiveHeaders = []string{
+	"authorization",
+	"proxy-authorization",
+	"cookie",
+	"set-cookie",
+	"x-csrf-token",
+	"x-api-key",
+	"x-auth-token",
+}
 
 func init() {
 	retryClient = retryablehttp.NewClient()
@@ -72,6 +80,32 @@ func isSensitiveHeader(name string) bool {
 		}
 	}
 	return false
+}
+
+// redactDebugBody replaces request/response bodies in debug output when they
+// look like login/auth payloads that commonly contain secrets.
+func redactDebugBody(body string) string {
+	lower := strings.ToLower(body)
+	sensitiveMarkers := []string{
+		"password",
+		"passwd",
+		"secret",
+		"otp",
+		"totp",
+		"token",
+		"authorization",
+		"client_secret",
+		"refresh_token",
+		"access_token",
+		"api_key",
+		"apikey",
+	}
+	for _, m := range sensitiveMarkers {
+		if strings.Contains(lower, m) {
+			return "[REDACTED BODY]"
+		}
+	}
+	return body
 }
 
 func GetDefaultClient() *retryablehttp.Client {
@@ -131,7 +165,7 @@ func SendHTTPRequest(wReq *WHTTPReq, customClient *retryablehttp.Client) (wRes *
 			}
 		}
 		if wReq.Body != "" {
-			fmt.Printf("\n%s\n", wReq.Body)
+			fmt.Printf("\n%s\n", redactDebugBody(wReq.Body))
 		}
 		fmt.Println("**********************************")
 	}
@@ -159,9 +193,13 @@ func SendHTTPRequest(wReq *WHTTPReq, customClient *retryablehttp.Client) (wRes *
 		fmt.Println("********** HTTP RESPONSE **********")
 		fmt.Printf("Status: %d\n", resp.StatusCode)
 		for k, v := range resp.Header {
-			fmt.Printf("%s: %s\n", k, strings.Join(v, ", "))
+			if isSensitiveHeader(k) {
+				fmt.Printf("%s: [REDACTED]\n", k)
+			} else {
+				fmt.Printf("%s: %s\n", k, strings.Join(v, ", "))
+			}
 		}
-		fmt.Printf("\n%s\n", wRes.BodyString)
+		fmt.Printf("\n%s\n", redactDebugBody(wRes.BodyString))
 		fmt.Println("***********************************")
 	}
 

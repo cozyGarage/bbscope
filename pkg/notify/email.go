@@ -27,6 +27,9 @@ func (e *EmailNotifier) Name() string {
 
 // Send sends a notification via email
 func (e *EmailNotifier) Send(ctx context.Context, event ChangeEvent) error {
+	if e.config == nil || len(e.config.To) == 0 {
+		return fmt.Errorf("email notifier: no recipients configured")
+	}
 	if !shouldSend(e.config.Events, event.Type) {
 		return nil
 	}
