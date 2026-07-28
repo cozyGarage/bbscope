@@ -41,3 +41,9 @@ higher-level, human-curated changes.
   error cannot terminate the whole run.
 - `db shell` redacts the database URL and passes the password via `PGPASSWORD`
   instead of exposing it on the process command line.
+- Bugcrowd `poll bc` now honors `--category` for both target-group and
+  engagement brief scope extraction (previously hard-coded to `all`).
+- Bugcrowd login accepts path-relative `redirect_to` values resolved against
+  `identity.bugcrowd.com`, while still rejecting off-origin hosts.
+- YesWeHack TOTP verification payload is JSON-marshaled instead of string-concatenated.
+- `pkg/whttp` invalid-URL unit test no longer burns ~3 minutes on default retries.
