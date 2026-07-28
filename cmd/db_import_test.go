@@ -6,7 +6,8 @@ import (
 )
 
 func TestParseImportJSONObject(t *testing.T) {
-	raw := `{"exported_at":"2024-01-01T00:00:00Z","entries":[{"platform":"custom","program_url":"custom","target_raw":"a.example.com","category":"wildcard","in_scope":true,"is_bbp":false}]}`
+	// Entry has no json tags, so export/import use Go field names.
+	raw := `{"exported_at":"2024-01-01T00:00:00Z","entries":[{"Platform":"custom","ProgramURL":"custom","TargetRaw":"a.example.com","Category":"wildcard","InScope":true,"IsBBP":false}]}`
 	entries, err := parseimportJSON(strings.NewReader(raw))
 	if err != nil {
 		t.Fatalf("parseimportJSON object: %v", err)
@@ -17,7 +18,7 @@ func TestParseImportJSONObject(t *testing.T) {
 }
 
 func TestParseImportJSONArrayFallback(t *testing.T) {
-	raw := `[{"platform":"custom","program_url":"custom","target_raw":"b.example.com","category":"domain","in_scope":true,"is_bbp":false}]`
+	raw := `[{"Platform":"custom","ProgramURL":"custom","TargetRaw":"b.example.com","Category":"domain","InScope":true,"IsBBP":false}]`
 	entries, err := parseimportJSON(strings.NewReader(raw))
 	if err != nil {
 		t.Fatalf("parseimportJSON array fallback: %v", err)
