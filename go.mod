@@ -13,7 +13,7 @@ require (
 	github.com/tidwall/gjson v1.19.0
 	github.com/weppos/publicsuffix-go v0.50.0
 	github.com/zalando/go-keyring v0.2.6
-	golang.org/x/net v0.44.0
+	golang.org/x/net v0.45.0
 )
 
 require (

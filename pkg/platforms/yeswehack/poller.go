@@ -195,7 +195,10 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 		}
 
 		totpURL := apiBaseURL + "/account/totp"
-		totpPayload := fmt.Sprintf(`{"token":"%s","code":"%s"}`, totpToken, code)
+		totpPayload, err := json.Marshal(map[string]string{"token": totpToken, "code": code})
+		if err != nil {
+			return "", fmt.Errorf("building TOTP payload: %w", err)
+		}
 
 		totpRes, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
 			Method: "POST",
@@ -203,7 +206,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Content-Type", Value: "application/json"},
 			},
-			Body: totpPayload,
+			Body: string(totpPayload),
 		}, nil)
 
 		if err != nil {

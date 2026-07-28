@@ -62,4 +62,18 @@ func TestValidateBugcrowdRedirectURL(t *testing.T) {
 	if err := validateBugcrowdRedirectURL("http://bugcrowd.com/home"); err == nil {
 		t.Fatal("http redirect should be rejected")
 	}
+
+	got, err := sanitizeBugcrowdRedirectURL("/dashboard")
+	if err != nil {
+		t.Fatalf("relative redirect should be allowed: %v", err)
+	}
+	if got != "https://identity.bugcrowd.com/dashboard" {
+		t.Fatalf("relative redirect resolved to %q", got)
+	}
+	if _, err := sanitizeBugcrowdRedirectURL("dashboard"); err == nil {
+		t.Fatal("non-absolute relative path should be rejected")
+	}
+	if _, err := sanitizeBugcrowdRedirectURL("//evil.example/phish"); err == nil {
+		t.Fatal("scheme-relative URL should be rejected")
+	}
 }

@@ -138,6 +138,22 @@ func TestFetchProgramScope_TargetGroups(t *testing.T) {
 	if len(pd.OutOfScope) != 1 || pd.OutOfScope[0].Target != "https://blog.acme.com" {
 		t.Fatalf("expected OOS blog, got %+v", pd.OutOfScope)
 	}
+
+	// Category filter must honor opts.Categories (maps "url" → website/api/...).
+	pd, err = p.FetchProgramScope(context.Background(), "/acme", platforms.PollOptions{Categories: "url"})
+	if err != nil {
+		t.Fatalf("category filter FetchProgramScope: %v", err)
+	}
+	if len(pd.InScope) != 2 {
+		t.Fatalf("url filter should keep website+api in-scope, got %+v", pd.InScope)
+	}
+	pd, err = p.FetchProgramScope(context.Background(), "/acme", platforms.PollOptions{Categories: "android"})
+	if err != nil {
+		t.Fatalf("android filter FetchProgramScope: %v", err)
+	}
+	if len(pd.InScope) != 0 || len(pd.OutOfScope) != 0 {
+		t.Fatalf("android filter should drop website targets, got in=%+v oos=%+v", pd.InScope, pd.OutOfScope)
+	}
 }
 
 func TestFetchProgramScope_EngagementBrief(t *testing.T) {

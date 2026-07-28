@@ -216,7 +216,8 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 	if redirectUrl == "" {
 		return "", errors.New("no redirect URL found in response")
 	}
-	if err := validateBugcrowdRedirectURL(redirectUrl); err != nil {
+	redirectUrl, err = sanitizeBugcrowdRedirectURL(redirectUrl)
+	if err != nil {
 		return "", err
 	}
 
@@ -251,18 +252,35 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 // validateBugcrowdRedirectURL restricts post-login redirects to bugcrowd.com hosts
 // so session cookies are not sent to an attacker-controlled URL.
 func validateBugcrowdRedirectURL(raw string) error {
+	_, err := sanitizeBugcrowdRedirectURL(raw)
+	return err
+}
+
+// sanitizeBugcrowdRedirectURL resolves relative redirects against the Bugcrowd
+// identity origin and rejects any absolute URL that is not on *.bugcrowd.com over HTTPS.
+func sanitizeBugcrowdRedirectURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("invalid redirect URL: %w", err)
+		return "", fmt.Errorf("invalid redirect URL: %w", err)
 	}
+
+	if u.Scheme == "" && u.Host == "" {
+		// Path-relative redirect from the identity login flow.
+		if u.Path == "" || !strings.HasPrefix(u.Path, "/") {
+			return "", fmt.Errorf("relative redirect must be an absolute path, got %q", raw)
+		}
+		base, _ := url.Parse("https://identity.bugcrowd.com")
+		u = base.ResolveReference(u)
+	}
+
 	if u.Scheme != "https" {
-		return fmt.Errorf("redirect URL must use https, got %q", u.Scheme)
+		return "", fmt.Errorf("redirect URL must use https, got %q", u.Scheme)
 	}
 	host := strings.ToLower(u.Hostname())
 	if host == "bugcrowd.com" || strings.HasSuffix(host, ".bugcrowd.com") {
-		return nil
+		return u.String(), nil
 	}
-	return fmt.Errorf("redirect URL host %q is not an allowed bugcrowd.com host", host)
+	return "", fmt.Errorf("redirect URL host %q is not an allowed bugcrowd.com host", host)
 }
 
 func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool) ([]string, error) {
@@ -356,7 +374,7 @@ func GetProgramScope(handle string, categories string, token string) (pData scop
 		}
 
 		if getBriefVersionDocument != "" {
-			err = extractScopeFromEngagement(getBriefVersionDocument, token, &pData)
+			err = extractScopeFromEngagement(getBriefVersionDocument, categories, token, &pData)
 			if err != nil {
 				return pData, err
 			}
@@ -422,7 +440,7 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 	return path + ".json", nil
 }
 
-func extractScopeFromEngagement(getBriefVersionDocument string, token string, pData *scope.ProgramData) (err error) {
+func extractScopeFromEngagement(getBriefVersionDocument string, categories string, token string, pData *scope.ProgramData) (err error) {
 	if getBriefVersionDocument == "" || getBriefVersionDocument == ".json" {
 		// Missing brief endpoint usually means compliance gate / 2FA / HTML change.
 		// Do not invent sentinel targets that would pollute storage and notifications.
@@ -450,6 +468,7 @@ func extractScopeFromEngagement(getBriefVersionDocument string, token string, pD
 
 	// Extract the "scope" array from the JSON
 	scopeArray := gjson.Get(res.BodyString, "data.scope")
+	selectedCategories := scope.GetAllStringsForCategories(categories)
 
 	// Iterate over each element of the "scope" array
 	scopeArray.ForEach(func(key, value gjson.Result) bool {
@@ -466,6 +485,19 @@ func extractScopeFromEngagement(getBriefVersionDocument string, token string, pD
 			uri := objectValue.Get("uri").String()
 			category := objectValue.Get("category").String()
 			description := objectValue.Get("description").String()
+
+			if selectedCategories != nil {
+				catMatches := false
+				for _, selectedCat := range selectedCategories {
+					if category == selectedCat {
+						catMatches = true
+						break
+					}
+				}
+				if !catMatches {
+					return true
+				}
+			}
 
 			if uri == "" {
 				uri = name
