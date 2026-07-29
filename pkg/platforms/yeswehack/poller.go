@@ -56,6 +56,9 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		if err != nil {
 			return nil, err
 		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return nil, fmt.Errorf("yeswehack: listing programs failed with status %d", res.StatusCode)
+		}
 
 		data := gjson.GetMany(res.BodyString, "items.#.slug", "items.#.bounty", "items.#.public", "items.#.disabled")
 		allCompanySlugs := data[0].Array()
@@ -94,6 +97,9 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 
 	if err != nil {
 		return pData, err
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return pData, fmt.Errorf("yeswehack: fetching program %s failed with status %d", handle, res.StatusCode)
 	}
 
 	chunkData := gjson.GetMany(res.BodyString, "scopes.#.scope", "scopes.#.scope_type", "out_of_scope")
@@ -195,7 +201,10 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 		}
 
 		totpURL := apiBaseURL + "/account/totp"
-		totpPayload := fmt.Sprintf(`{"token":"%s","code":"%s"}`, totpToken, code)
+		totpPayload, err := json.Marshal(map[string]string{"token": totpToken, "code": code})
+		if err != nil {
+			return "", fmt.Errorf("building TOTP payload: %w", err)
+		}
 
 		totpRes, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
 			Method: "POST",
@@ -203,7 +212,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Content-Type", Value: "application/json"},
 			},
-			Body: totpPayload,
+			Body: string(totpPayload),
 		}, nil)
 
 		if err != nil {

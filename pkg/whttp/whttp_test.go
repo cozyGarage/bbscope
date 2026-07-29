@@ -2,9 +2,13 @@ package whttp
 
 import (
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func TestIsSensitiveHeader(t *testing.T) {
@@ -186,7 +190,14 @@ func TestSendHTTPRequest_InvalidURL(t *testing.T) {
 		Method: "GET",
 	}
 
-	_, err := SendHTTPRequest(req, nil)
+	// Use a no-retry client so permanent DNS failures do not wait on the
+	// default RetryMax=10 / 1s..30s backoff (which made `go test ./...` ~3min).
+	client := retryablehttp.NewClient()
+	client.RetryMax = 0
+	client.HTTPClient.Timeout = 2 * time.Second
+	client.Logger = log.New(io.Discard, "", 0)
+
+	_, err := SendHTTPRequest(req, client)
 	if err == nil {
 		t.Error("expected error for invalid URL, got nil")
 	}

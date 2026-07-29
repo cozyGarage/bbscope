@@ -123,7 +123,7 @@ func formatSlackMessage(event ChangeEvent, cfg *SlackConfig) slackMessage {
 			{Title: "Type", Value: event.Type, Short: true},
 			{Title: "Category", Value: event.Category, Short: true},
 			{Title: "Target", Value: event.Target, Short: false},
-			{Title: "Program", Value: fmt.Sprintf("<%s|%s>", event.ProgramURL, event.ProgramHandle), Short: false},
+			{Title: "Program", Value: formatSlackLink(event.ProgramURL, event.ProgramHandle), Short: false},
 			{Title: "Status", Value: fmt.Sprintf("%s • %s", scopeStatus, bountyStatus), Short: false},
 		},
 		Footer: "bbscope",

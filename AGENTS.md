@@ -2,7 +2,7 @@
 
 ## Cursor Cloud specific instructions
 
-`bbscope` is a single Go 1.24 CLI (module `github.com/cozyGarage/bbscope/v2`). There is no long-running server; you build one binary and run subcommands. Standard commands live in the `Makefile`, `README.md`, and `docs/CONTRIBUTING.md` — use those; notes below only cover non-obvious caveats.
+`bbscope` is a single Go 1.26 CLI (module `github.com/cozyGarage/bbscope/v2`). There is no long-running server; you build one binary and run subcommands. Standard commands live in the `Makefile`, `README.md`, and `docs/CONTRIBUTING.md` — use those; notes below only cover non-obvious caveats.
 
 ### Build / test / lint / run
 - Build: `go build -o bbscope .` (or `make build`).

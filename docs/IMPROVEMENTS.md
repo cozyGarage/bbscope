@@ -82,31 +82,13 @@ Changes made:
 
 ---
 
-### 4. Add Non-Root User to Dockerfile
+### ~~4. Add Non-Root User to Dockerfile~~ ✅ IMPLEMENTED
 
-**Current Issue:**
-Container runs as root user.
+**Status:** ✅ Implemented
 
-**Location:** `Dockerfile`
-
-**Recommended Changes:**
-```dockerfile
-FROM alpine:3.19
-
-# Create non-root user
-RUN adduser -D -g '' -u 1000 bbscope
-
-WORKDIR /home/bbscope
-
-COPY --from=builder /app/bbscope .
-
-USER bbscope
-
-ENTRYPOINT ["./bbscope"]
-```
-
-**Effort:** Low (30 minutes)
-**Impact:** Medium (Security)
+Changes made:
+- Dockerfile creates a non-root `bbscope` user (uid 1000) and runs as that user
+- Location: `Dockerfile`
 
 ---
 
@@ -134,27 +116,13 @@ ENTRYPOINT ["./bbscope"]
 
 ---
 
-### 6. Validate Database Name in Auto-Creation
+### ~~6. Validate Database Name in Auto-Creation~~ ✅ IMPLEMENTED
 
-**Current Issue:**
-Database name from URL is used directly in SQL.
+**Status:** ✅ Implemented
 
-**Location:** `pkg/storage/storage.go`
-
-**Recommended Changes:**
-```go
-func validateDatabaseName(name string) error {
-    // Only allow alphanumeric and underscore
-    matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_]*$`, name)
-    if !matched || len(name) > 63 {
-        return fmt.Errorf("invalid database name: %s", name)
-    }
-    return nil
-}
-```
-
-**Effort:** Low (1 hour)
-**Impact:** Medium (Security)
+Changes made:
+- `validateDatabaseName` rejects invalid PostgreSQL identifiers before `CREATE DATABASE`
+- Location: `pkg/storage/storage.go`
 
 ---
 

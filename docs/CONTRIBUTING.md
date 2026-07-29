@@ -29,7 +29,7 @@ Thank you for your interest in contributing to bbscope! This document provides g
 
 ### Prerequisites
 
-- **Go 1.24+** (or the version specified in go.mod)
+- **Go 1.26+** (or the version specified in go.mod)
 - **PostgreSQL 12+** (for database features)
 - **Git**
 - **Make** (optional, for convenience scripts)

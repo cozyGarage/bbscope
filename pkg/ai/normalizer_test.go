@@ -101,6 +101,40 @@ func TestNormalizerScenarios(t *testing.T) {
 			t.Fatalf("sanitize failed: %v", out)
 		}
 	})
+
+	t.Run("drops invented unrelated targets", func(t *testing.T) {
+		out := mergeNormalized(
+			[]storage.TargetItem{{URI: "example.com", Category: "url"}},
+			0,
+			map[int]normalizedResult{0: {Targets: []string{"evil.com", "example.com"}}},
+		)
+		if len(out) != 1 {
+			t.Fatalf("expected 1 item, got %#v", out)
+		}
+		// exact normalized match without overrides is skipped; invented host dropped
+		if len(out[0].Variants) != 0 {
+			t.Fatalf("expected invented variant dropped, got %#v", out[0].Variants)
+		}
+	})
+}
+
+func TestVariantAllowed(t *testing.T) {
+	tests := []struct {
+		original, variant string
+		want              bool
+	}{
+		{"example.com", "example.com", true},
+		{"example.*", "example.com", true},
+		{"example.(it|com)", "example.it", true},
+		{"https://*.example.com/**", "example.com", true},
+		{"example.com", "evil.com", false},
+		{"example.com", "totally-unrelated.net", false},
+	}
+	for _, tc := range tests {
+		if got := variantAllowed(tc.original, tc.variant); got != tc.want {
+			t.Errorf("variantAllowed(%q, %q) = %v, want %v", tc.original, tc.variant, got, tc.want)
+		}
+	}
 }
 
 func mustJSON(v any) string {

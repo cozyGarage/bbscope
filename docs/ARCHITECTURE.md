@@ -89,7 +89,11 @@ bbscope/
 │   ├── scope/              # Scope data structures & processing
 │   │   └── scope.go        # ScopeElement, ProgramData, categories
 │   ├── storage/            # Database layer
-│   │   ├── storage.go      # Main DB operations
+│   │   ├── storage.go      # Connection pool, Open/Close, shared helpers
+│   │   ├── schema.go       # Schema migrations (schema_migrations)
+│   │   ├── upsert.go       # UpsertProgramEntries / BuildEntries
+│   │   ├── queries.go      # List/search/stats/change queries
+│   │   ├── programs.go     # Program ignore/sync/custom-target ops
 │   │   ├── types.go        # Data types (Entry, Change, etc.)
 │   │   ├── normalize.go    # URL/target normalization
 │   │   ├── transform.go    # Aggressive transformations
@@ -396,7 +400,7 @@ ai:
 |---------|---------|
 | `spf13/cobra` | CLI framework |
 | `spf13/viper` | Configuration management |
-| `lib/pq` | PostgreSQL driver |
+| `jackc/pgx/v5` | PostgreSQL driver (`database/sql` via stdlib) |
 | `hashicorp/go-retryablehttp` | HTTP client with retry |
 | `sirupsen/logrus` | Structured logging |
 | `tidwall/gjson` | JSON parsing |

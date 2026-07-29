@@ -114,7 +114,7 @@ func formatDiscordMessage(event ChangeEvent, cfg *DiscordConfig) discordMessage 
 	}
 
 	title := fmt.Sprintf("%s Scope Change on %s", emoji, event.Platform)
-	description := fmt.Sprintf("**Target:** `%s`", event.Target)
+	description := fmt.Sprintf("**Target:** `%s`", escapeDiscordInlineCode(event.Target))
 
 	embed := discordEmbed{
 		Title:       title,
@@ -123,7 +123,7 @@ func formatDiscordMessage(event ChangeEvent, cfg *DiscordConfig) discordMessage 
 		Fields: []discordField{
 			{Name: "Type", Value: event.Type, Inline: true},
 			{Name: "Category", Value: event.Category, Inline: true},
-			{Name: "Program", Value: fmt.Sprintf("[%s](%s)", event.ProgramHandle, event.ProgramURL), Inline: false},
+			{Name: "Program", Value: formatDiscordLink(event.ProgramHandle, event.ProgramURL), Inline: false},
 			{Name: "Status", Value: fmt.Sprintf("%s • %s", scopeStatus, bountyStatus), Inline: false},
 		},
 		Footer: &discordFooter{

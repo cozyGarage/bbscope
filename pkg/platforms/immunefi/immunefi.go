@@ -2,9 +2,9 @@ package immunefi
 
 import "strings"
 
-const (
-	PLATFORM_URL = "https://immunefi.com"
-)
+// PLATFORM_URL is the Immunefi site root. It is a package variable so tests can
+// point the poller at a local httptest server.
+var PLATFORM_URL = "https://immunefi.com"
 
 func getCategories(input string) []string {
 	categories := map[string][]string{

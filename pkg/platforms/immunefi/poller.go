@@ -14,7 +14,10 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
-const maxRetries = 20
+// maxRetries and sleepFunc are package variables so httptest tests can avoid
+// long exponential backoff against a local server.
+var maxRetries = 20
+var sleepFunc = time.Sleep
 
 type Poller struct{}
 
@@ -41,7 +44,7 @@ func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
 		if err != nil {
 			lastErr = err
 			// Network error, retry with backoff
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			sleepFunc(time.Duration(attempt+1) * time.Second)
 			continue
 		}
 
@@ -51,7 +54,7 @@ func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
 			if backoff > 30*time.Second {
 				backoff = 30 * time.Second
 			}
-			time.Sleep(backoff)
+			sleepFunc(backoff)
 			continue
 		}
 
@@ -59,7 +62,8 @@ func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
 			return res, nil
 		}
 
-		// Other error status, return it
+		// Other error status — keep retrying (Immunefi occasionally serves
+		// transient non-2xx responses during RSC navigations).
 		lastErr = fmt.Errorf("HTTP %d for %s", res.StatusCode, url)
 	}
 
@@ -80,14 +84,14 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 	bountiesRegex := regexp.MustCompile(`"bounties":\[`)
 	match := bountiesRegex.FindStringIndex(res.BodyString)
 	if match == nil {
-		return nil, nil
+		return nil, fmt.Errorf("immunefi: bounties array not found in listing response (page structure may have changed)")
 	}
 
 	// Find the matching closing bracket for the bounties array
 	startIdx := match[0] + len(`"bounties":`)
 	bountyJSON := extractJSONArray(res.BodyString[startIdx:])
 	if bountyJSON == "" {
-		return nil, nil
+		return nil, fmt.Errorf("immunefi: failed to extract bounties JSON from listing response")
 	}
 
 	var programURLs []string
@@ -115,17 +119,18 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 
 	selectedCategories := getCategories(opts.Categories)
 
-	// Extract assets array from RSC response
+	// Extract assets array from RSC response. A missing marker usually means the
+	// page shape changed; treat that as an error so sync does not see "empty success".
 	assetsRegex := regexp.MustCompile(`"assets":\[`)
 	match := assetsRegex.FindStringIndex(res.BodyString)
 	if match == nil {
-		return pData, nil
+		return pData, fmt.Errorf("immunefi: assets array not found for %s", handle)
 	}
 
 	startIdx := match[0] + len(`"assets":`)
 	assetsJSON := extractJSONArray(res.BodyString[startIdx:])
 	if assetsJSON == "" {
-		return pData, nil
+		return pData, fmt.Errorf("immunefi: failed to extract assets JSON for %s", handle)
 	}
 
 	var tempScope []scope.ScopeElement

@@ -206,13 +206,35 @@ func TestIntegration_SyncPlatformPrograms(t *testing.T) {
 		t.Fatalf("expected 2 active programs, got %d (err=%v)", count, err)
 	}
 
-	// Only program A was seen in the latest poll; B should be disabled.
-	if _, err := db.SyncPlatformPrograms(ctx, platform, []string{progA}); err != nil {
+	// Only program A was seen in the latest poll; B should be disabled. Use a
+	// trailing slash to verify sync comparisons use normalized program URLs.
+	if _, err := db.SyncPlatformPrograms(ctx, platform, []string{progA + "/"}); err != nil {
 		t.Fatalf("SyncPlatformPrograms: %v", err)
 	}
 
 	if count, err := db.GetActiveProgramCount(ctx, platform); err != nil || count != 1 {
 		t.Fatalf("expected 1 active program after sync, got %d (err=%v)", count, err)
+	}
+
+	listed, err := db.ListEntries(ctx, ListOptions{Platform: platform})
+	if err != nil {
+		t.Fatalf("ListEntries after sync: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ProgramURL != NormalizeProgramURL(progA) {
+		t.Fatalf("expected only active program A to list after sync, got %#v", listed)
+	}
+
+	var retainedTargets int
+	if err := db.sql.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM targets_raw tr
+		JOIN programs p ON p.id = tr.program_id
+		WHERE p.url = $1
+	`, NormalizeProgramURL(progB)).Scan(&retainedTargets); err != nil {
+		t.Fatalf("counting retained targets: %v", err)
+	}
+	if retainedTargets != 1 {
+		t.Fatalf("soft-disabled program should retain 1 target, got %d", retainedTargets)
 	}
 }
 
