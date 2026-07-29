@@ -66,6 +66,9 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		if res.StatusCode == 401 {
 			return nil, fmt.Errorf("invalid auth token")
 		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return nil, fmt.Errorf("intigriti: listing programs failed with status %d", res.StatusCode)
+		}
 
 		body := res.BodyString
 		if offset == 0 {
@@ -156,6 +159,9 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 			case <-time.After(2 * time.Second):
 			}
 			continue
+		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return pData, fmt.Errorf("intigriti: fetching program %s failed with status %d", handle, res.StatusCode)
 		}
 		break
 	}

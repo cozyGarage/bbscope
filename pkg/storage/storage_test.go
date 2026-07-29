@@ -156,12 +156,45 @@ func TestErrAbortingScopeWipe(t *testing.T) {
 	}
 }
 
+func TestErrAbortingPartialSync(t *testing.T) {
+	if ErrAbortingPartialSync == nil {
+		t.Error("ErrAbortingPartialSync should not be nil")
+	}
+	if ErrAbortingPartialSync.Error() == "" {
+		t.Error("ErrAbortingPartialSync.Error() should not be empty")
+	}
+}
+
 func TestErrInvalidDatabaseName(t *testing.T) {
 	if ErrInvalidDatabaseName == nil {
 		t.Error("ErrInvalidDatabaseName should not be nil")
 	}
 	if ErrInvalidDatabaseName.Error() == "" {
 		t.Error("ErrInvalidDatabaseName.Error() should not be empty")
+	}
+}
+
+func TestShouldAbortPartialSync(t *testing.T) {
+	tests := []struct {
+		name        string
+		activeCount int
+		removeCount int
+		want        bool
+	}{
+		{"below active threshold", 9, 9, false},
+		{"no removals", 10, 0, false},
+		{"exactly half", 10, 5, false},
+		{"more than half", 10, 6, true},
+		{"larger platform over ratio", 100, 51, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldAbortPartialSync(tt.activeCount, tt.removeCount)
+			if got != tt.want {
+				t.Fatalf("shouldAbortPartialSync(%d, %d) = %v, want %v", tt.activeCount, tt.removeCount, got, tt.want)
+			}
+		})
 	}
 }
 

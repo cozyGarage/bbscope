@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -19,6 +21,9 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
+// alternationPattern matches simple example.(it|com) / example.[it|com] expansions.
+var alternationPattern = regexp.MustCompile(`^([^\s(\[]+)[\(\[]([^)\]]+)[\)\]]$`)
+
 // ProgramInfo carries minimal details that help the LLM reason about scope entries.
 type ProgramInfo struct {
 	ProgramURL string
@@ -28,14 +33,15 @@ type ProgramInfo struct {
 
 // Config controls how the AI normalizer behaves.
 type Config struct {
-	Provider       string
-	APIKey         string
-	Model          string
-	Endpoint       string
-	MaxBatch       int
-	MaxConcurrency int
-	HTTPClient     *http.Client
-	Proxy          string
+	Provider           string
+	APIKey             string
+	Model              string
+	Endpoint           string
+	MaxBatch           int
+	MaxConcurrency     int
+	HTTPClient         *http.Client
+	Proxy              string
+	InsecureSkipVerify bool // only for debugging intercepting proxies; off by default
 }
 
 // Normalizer defines the behavior required to transform raw scope targets via LLMs.
@@ -49,6 +55,7 @@ const (
 	defaultEndpoint       = "https://api.openai.com/v1/chat/completions"
 	defaultMaxBatchSize   = 25
 	defaultMaxConcurrency = 10
+	maxAIResponseBytes    = 10 << 20 // 10 MiB
 )
 
 // NewNormalizer builds a concrete Normalizer implementation based on the provided config.
@@ -121,7 +128,7 @@ func newOpenAINormalizer(cfg Config) (*openAINormalizer, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid ai proxy: %w", err)
 		}
-		applyProxyToClient(httpClient, proxyURL)
+		applyProxyToClient(httpClient, proxyURL, cfg.InsecureSkipVerify)
 	}
 
 	return &openAINormalizer{
@@ -271,13 +278,15 @@ func (n *openAINormalizer) queryLLM(ctx context.Context, info ProgramInfo, baseI
 	}
 	defer resp.Body.Close()
 
+	limitedBody := io.LimitReader(resp.Body, maxAIResponseBytes)
+
 	if resp.StatusCode >= 300 {
 		var apiErrResp struct {
 			Error struct {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&apiErrResp)
+		_ = json.NewDecoder(limitedBody).Decode(&apiErrResp)
 		if apiErrResp.Error.Message != "" {
 			return nil, fmt.Errorf("ai normalization: %s", apiErrResp.Error.Message)
 		}
@@ -285,7 +294,7 @@ func (n *openAINormalizer) queryLLM(ctx context.Context, info ProgramInfo, baseI
 	}
 
 	var apiResp openAIChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.NewDecoder(limitedBody).Decode(&apiResp); err != nil {
 		return nil, err
 	}
 
@@ -440,6 +449,9 @@ func mergeNormalized(items []storage.TargetItem, baseID int, normalized map[int]
 				if target == "" {
 					continue
 				}
+				if !variantAllowed(cloned.URI, target) {
+					continue
+				}
 				var hasInScope bool
 				var inScopeVal bool
 				if result.InScope != nil {
@@ -489,7 +501,83 @@ func sanitizeTargets(targets []string) []string {
 	return out
 }
 
-func applyProxyToClient(client *http.Client, proxyURL *url.URL) {
+// variantAllowed rejects LLM-invented targets that are not derived from the original URI.
+func variantAllowed(original, variant string) bool {
+	variant = strings.ToLower(strings.TrimSpace(variant))
+	if variant == "" {
+		return false
+	}
+	origNorm := strings.ToLower(strings.TrimSpace(storage.NormalizeTarget(original)))
+	if variant == origNorm {
+		return true
+	}
+
+	for _, candidate := range expandAlternationCandidates(original) {
+		if candidate == variant {
+			return true
+		}
+	}
+
+	base := cleanScopeBase(original)
+	if base == "" {
+		return false
+	}
+	if variant == base || strings.HasPrefix(variant, base+".") || strings.HasSuffix(base, "."+variant) {
+		return true
+	}
+	// Wildcard cleanup may yield the registrable domain of a messy original.
+	if root, ok := storage.ExtractRootDomain(base); ok {
+		if variant == root || strings.HasSuffix(variant, "."+root) {
+			return true
+		}
+	}
+	return false
+}
+
+func expandAlternationCandidates(original string) []string {
+	s := strings.ToLower(strings.TrimSpace(original))
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	if idx := strings.IndexAny(s, "/?#"); idx >= 0 {
+		s = s[:idx]
+	}
+	m := alternationPattern.FindStringSubmatch(s)
+	if m == nil {
+		return nil
+	}
+	prefix := m[1]
+	parts := strings.Split(m[2], "|")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, prefix+p)
+	}
+	return out
+}
+
+// cleanScopeBase strips scheme/path/wildcard noise to a comparable domain-ish base.
+func cleanScopeBase(original string) string {
+	s := strings.ToLower(strings.TrimSpace(original))
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	if idx := strings.IndexAny(s, "/?#"); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.ReplaceAll(s, "*.", "")
+	s = strings.ReplaceAll(s, ".*", "")
+	s = strings.ReplaceAll(s, "*", "")
+	s = strings.Trim(s, ".")
+	// Drop unresolved alternation markers for base comparison.
+	if i := strings.IndexAny(s, "(["); i >= 0 {
+		s = strings.Trim(s[:i], ".")
+	}
+	return s
+}
+
+func applyProxyToClient(client *http.Client, proxyURL *url.URL, insecureSkipVerify bool) {
 	var baseTransport *http.Transport
 	if transport, ok := client.Transport.(*http.Transport); ok && transport != nil {
 		baseTransport = transport.Clone()
@@ -499,11 +587,12 @@ func applyProxyToClient(client *http.Client, proxyURL *url.URL) {
 		baseTransport = &http.Transport{}
 	}
 	baseTransport.Proxy = http.ProxyURL(proxyURL)
-	// Skip TLS certificate verification when using a proxy (useful for debugging proxies)
 	if baseTransport.TLSClientConfig == nil {
-		baseTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	} else {
-		baseTransport.TLSClientConfig.InsecureSkipVerify = true
+		baseTransport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	} else if baseTransport.TLSClientConfig.MinVersion == 0 {
+		baseTransport.TLSClientConfig.MinVersion = tls.VersionTLS12
 	}
+	// TLS verification stays on unless explicitly opted in for intercepting proxies.
+	baseTransport.TLSClientConfig.InsecureSkipVerify = insecureSkipVerify
 	client.Transport = baseTransport
 }

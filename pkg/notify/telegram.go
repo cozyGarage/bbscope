@@ -94,21 +94,28 @@ func formatTelegramMessage(event ChangeEvent) string {
 		bountyIcon = "🎁"
 	}
 
+	programURL := safeHTTPURL(event.ProgramURL)
+	programField := escapeTelegramHTML(event.ProgramHandle)
+	if programURL != "" {
+		programField = fmt.Sprintf(`<a href="%s">%s</a>`, escapeTelegramHTML(programURL), escapeTelegramHTML(event.ProgramHandle))
+	} else if event.ProgramURL != "" {
+		programField = escapeTelegramHTML(event.ProgramURL)
+	}
+
 	// Use HTML formatting
 	message := fmt.Sprintf(
 		"%s <b>Scope Change on %s</b>\n\n"+
 			"<b>Type:</b> %s\n"+
 			"<b>Category:</b> %s\n"+
 			"<b>Target:</b> <code>%s</code>\n"+
-			"<b>Program:</b> <a href=\"%s\">%s</a>\n"+
+			"<b>Program:</b> %s\n"+
 			"<b>Status:</b> %s In-Scope • %s Bounty\n",
 		emoji,
-		event.Platform,
-		event.Type,
-		event.Category,
-		escapeHTML(event.Target),
-		event.ProgramURL,
-		escapeHTML(event.ProgramHandle),
+		escapeTelegramHTML(event.Platform),
+		escapeTelegramHTML(event.Type),
+		escapeTelegramHTML(event.Category),
+		escapeTelegramHTML(event.Target),
+		programField,
 		scopeIcon,
 		bountyIcon,
 	)
@@ -128,26 +135,4 @@ func getTelegramEmoji(changeType string) string {
 	default:
 		return "📝"
 	}
-}
-
-// escapeHTML escapes HTML special characters for Telegram
-func escapeHTML(s string) string {
-	s = replaceString(s, "&", "&amp;")
-	s = replaceString(s, "<", "&lt;")
-	s = replaceString(s, ">", "&gt;")
-	return s
-}
-
-func replaceString(s, old, new string) string {
-	// Simple string replacement
-	result := ""
-	for i := 0; i < len(s); i++ {
-		if i+len(old) <= len(s) && s[i:i+len(old)] == old {
-			result += new
-			i += len(old) - 1
-		} else {
-			result += string(s[i])
-		}
-	}
-	return result
 }

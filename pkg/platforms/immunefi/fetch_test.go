@@ -139,11 +139,8 @@ func TestListProgramHandles_MissingBounties(t *testing.T) {
 	withTestTransport(t, srv.URL)
 
 	p := &Poller{}
-	got, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("expected empty handles, got %v", got)
+	_, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{})
+	if err == nil {
+		t.Fatal("expected error when bounties array is missing")
 	}
 }

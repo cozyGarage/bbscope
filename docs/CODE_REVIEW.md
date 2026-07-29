@@ -20,23 +20,23 @@ Review of `bbscope` after the quality-uplift work on `main`. This note captures 
 
 ### Still open (not in this PR)
 
-1. **`SyncPlatformPrograms` hard-deletes targets** for programs missing from a (possibly partial) handle list. Only empty-list + count>10 is guarded. Prefer soft-disable / retention + stricter sync thresholds.
-2. **Upsert TOCTOU**: read/diff outside the write transaction — concurrent polls can conflict.
-3. **Identity key ≠ `NormalizeTarget` / case-sensitive UNIQUE** — can merge or duplicate rows incorrectly; program URLs not normalized on insert.
-4. **AI normalizer** accepts arbitrary LLM-invented variant strings (prompt-only constraint).
-5. **Notify HTML/markup injection** from untrusted scope fields (email worst).
-6. **Immunefi / some pollers** treat parse/HTTP failures as empty success → sync risk for small DBs.
+1. ~~**`SyncPlatformPrograms` hard-deletes targets**~~ **Fixed** — soft-disable only + partial-list abort (`ErrAbortingPartialSync`).
+2. ~~**Upsert TOCTOU**~~ **Fixed** — single transaction with program/target `FOR UPDATE`.
+3. ~~**Identity key ≠ `NormalizeTarget`**~~ **Fixed** — `identityKey` uses `NormalizeTarget` + `NormalizeCategory`; program URLs canonicalized on upsert/sync.
+4. ~~**AI normalizer** accepts arbitrary LLM-invented variants~~ **Fixed** — `variantAllowed` + alternation expansion; TLS verify on by default; 10MiB response cap.
+5. ~~**Notify HTML/markup injection**~~ **Fixed** — `pkg/notify/sanitize.go` + safe links in email/slack/discord/telegram.
+6. ~~**Immunefi / some pollers** empty success~~ **Fixed** — Immunefi missing arrays error; IT/YWH non-2xx status errors.
 7. **`--since` flag** declared but unused.
 8. **`pkg/validate` unused** by cmd/storage paths.
-9. **YWH TOTP payload** built with `fmt.Sprintf` (prefer `json.Marshal`).
+9. ~~**YWH TOTP payload**~~ **Fixed** — `json.Marshal`.
 
 ## Medium
 
 - Shared `whttp` client `SetupProxy` mutates global transport (races / permanent `InsecureSkipVerify` after `--proxy`).
-- AI path also forces `InsecureSkipVerify` when proxy set; unbounded response decode.
+- ~~AI path also forces `InsecureSkipVerify` when proxy set; unbounded response decode.~~ **Fixed**
 - Import still custom-only; CSV ignores in_scope/is_bbp columns.
 - `db print --platform` docs say comma-separated; code is single equality.
-- `GetStats` can inflate counts via AI join.
+- `GetStats` can inflate counts via AI join. *(default list/search/stats now exclude soft-disabled programs)*
 - TUI “Changes (24h)” is not time-filtered; errors never rendered.
 - OTP ignores otpauth `period` / algorithm.
 
@@ -44,14 +44,15 @@ Review of `bbscope` after the quality-uplift work on `main`. This note captures 
 
 - Parameterized SQL, DB-name validation, connection-string redaction.
 - Scope-wipe guard on empty upsert; worker-pool poll tests.
+- Soft-disable sync retention + partial-poll guard.
 - Keychain credentials package + config permission warnings.
-- Platform poller interface consistency; H1/IT/YWH httptest coverage.
+- Platform poller interface consistency; H1/IT/YWH/BC/Immunefi httptest coverage.
 - Wildcard extraction pipeline well tested.
 
 ## Suggested next work
 
-1. Soft-delete / safer `SyncPlatformPrograms` + partial-list thresholds.
-2. Transactional upsert (read+write under one tx / row locks).
-3. Align identity keys with normalized targets + case-insensitive uniqueness.
-4. Escape all notify interpolations; validate AI variants against source URI.
+1. Wire `--since` into poll change printing.
+2. Use `pkg/validate` on DB URL / `db add` inputs.
+3. Optional unique indexes after identity migration proves clean.
+4. Avoid global `whttp.SetupProxy` transport mutation.
 5. Implement daemon by reusing `runPollWithPollers`, or keep hidden until ready.

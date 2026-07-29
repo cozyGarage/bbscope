@@ -87,11 +87,12 @@ func BuildTargetCategoryKey(target, category string) string {
 
 // ListOptions controls selection when listing entries.
 type ListOptions struct {
-	Platform       string
-	ProgramFilter  string
-	Since          time.Time
-	IncludeOOS     bool
-	IncludeIgnored bool
+	Platform        string
+	ProgramFilter   string
+	Since           time.Time
+	IncludeOOS      bool
+	IncludeIgnored  bool
+	IncludeDisabled bool
 }
 
 // ListEntries returns current entries matching filters.
@@ -116,6 +117,9 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 	}
 	if !opts.IncludeIgnored {
 		where += " AND p.is_ignored = 0"
+	}
+	if !opts.IncludeDisabled {
+		where += " AND p.disabled = 0"
 	}
 	if !opts.Since.IsZero() {
 		where += fmt.Sprintf(" AND COALESCE(a.last_seen_at, t.last_seen_at) >= $%d", argIdx)
@@ -305,7 +309,7 @@ func (d *DB) GetStats(ctx context.Context) ([]PlatformStats, error) {
 		FROM
 			programs p JOIN effective_targets et ON p.id = et.program_id
 		WHERE
-			p.is_ignored = 0
+			p.is_ignored = 0 AND p.disabled = 0
 		GROUP BY
 			p.platform
 		ORDER BY
@@ -350,7 +354,7 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 		FROM targets_raw t
 		JOIN programs p ON t.program_id = p.id
 		LEFT JOIN targets_ai_enhanced a ON a.target_id = t.id
-		WHERE p.is_ignored = 0 AND (
+		WHERE p.is_ignored = 0 AND p.disabled = 0 AND (
 			COALESCE(a.target_ai_normalized, t.target) LIKE $1 OR
 			t.description LIKE $2 OR
 			p.url LIKE $3
@@ -379,6 +383,7 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 			JOIN programs p2 ON t2.program_id = p2.id
 			WHERE p2.url = c.program_url
 			AND p2.is_ignored = 0
+			AND p2.disabled = 0
 			AND t2.target = c.target_raw
 			AND t2.category = c.category
 		);
