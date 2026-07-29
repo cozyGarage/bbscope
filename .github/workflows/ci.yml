@@ -51,9 +51,10 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          # Pin for reproducible lint results (was "latest", which drifts over time).
-          version: v1.64.8
+          # v1.64.8 was built with Go 1.24 and rejects go.mod 1.25; v2 supports Go 1.25.
+          version: v2.12.2
           args: --timeout=5m
+          install-mode: binary
 
   build:
     name: Build
@@ -107,12 +108,14 @@ jobs:
           cache: true
 
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+        # Pin to a release that builds under Go 1.25 (v2.21.4 fails to compile
+        # against modern x/tools).
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
 
       - name: Run Gosec Security Scanner
         # Excluded rules are intentional design choices / false positives for
         # this recon tool (see .golangci.yml gosec.excludes for rationale).
-        run: gosec -exclude=G104,G101,G115,G201,G204,G304,G402,G505 -exclude-dir=docs ./...
+        run: gosec -exclude=G104,G101,G115,G201,G204,G304,G402,G505,G701 -exclude-dir=docs ./...
 
   tidy:
     name: Tidy

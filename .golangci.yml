@@ -1,95 +1,95 @@
-# golangci-lint configuration for bbscope
-# See https://golangci-lint.run/usage/configuration/
+version: "2"
 
 run:
-  timeout: 5m
   modules-download-mode: readonly
 
 linters:
   enable:
-    # Default linters
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    # Additional security linters
-    - gosec
     - bodyclose
-    # Code quality
-    - gofmt
-    - goimports
+    - errorlint
+    - gosec
     - misspell
+    - prealloc
     - unconvert
     - unparam
-    # Error handling
-    - errorlint
-    # Performance
-    - prealloc
   disable:
     - exhaustive
     - exhaustruct
-
-linters-settings:
-  gosec:
-    excludes:
-      - G104 # Audit errors not checked (we handle this case by case)
-      # The following are intentional design choices / false positives for this
-      # recon tool and are handled deliberately in the code:
-      - G101 # "credential" constants are keychain key names, not secrets
-      - G115 # integer conversion is bounded (TOTP time step)
-      - G201 # SQL is built from hardcoded strings with parameterised values
-      - G204 # `db shell` intentionally launches psql
-      - G304 # `db import` intentionally opens a user-provided file
-      - G402 # TLS verification is intentionally skippable for proxy debugging
-      - G505 # SHA1 is required by the TOTP spec (RFC 4226)
-    config:
-      global:
-        audit: enabled
-  
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment # Not critical for this project
-      - shadow # Flags idiomatic err shadowing; too noisy for this project
-      - unusedwrite # Flags struct fields set in tests but not asserted
-  
-  goimports:
-    local-prefixes: github.com/cozyGarage/bbscope
-  
-  misspell:
-    locale: US
+  settings:
+    gosec:
+      excludes:
+        - G104 # Audit errors not checked (handled case by case)
+        - G101 # "credential" constants are keychain key names, not secrets
+        - G115
+        - G201
+        - G204
+        - G304
+        - G402
+        - G505
+        # CREATE DATABASE uses validateDatabaseName + pgx.Identifier.Sanitize.
+        - G701
+      config:
+        global:
+          audit: enabled
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+        - unusedwrite
+      enable-all: true
+    misspell:
+      locale: US
+    staticcheck:
+      checks:
+        - all
+        # Style nits that would create noisy churn unrelated to Go 1.25 migration.
+        - "-QF1003"
+        - "-ST1005"
+        # Historical exported/API names (Url, USER_AGENT, etc.) — rename is out of scope.
+        - "-ST1003"
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gosec
+          - prealloc
+          - unparam
+        path: _test\.go
+      - linters:
+          - all
+        path: docs/
+      - linters:
+          - forbidigo
+        path: cmd/
+        text: fmt.Print
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 
 issues:
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gosec
-        - unparam
-        - prealloc
-    
-    # Exclude known issues in generated code
-    - path: docs/
-      linters:
-        - all
-    
-    # Allow fmt.Print in cmd package (CLI output)
-    - path: cmd/
-      text: "fmt.Print"
-      linters:
-        - forbidigo
-
-  # Maximum issues count per one linter
   max-issues-per-linter: 50
-  
-  # Maximum count of issues with the same text
   max-same-issues: 3
 
 severity:
-  default-severity: warning
-  rules:
-    - linters:
-        - gosec
-      severity: error
+  default: error
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/cozyGarage/bbscope
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
