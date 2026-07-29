@@ -49,12 +49,11 @@ jobs:
           cache: true
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          # v1.64.8 was built with Go 1.24 and rejects go.mod 1.25; v2 supports Go 1.25.
+          # Action v7+ is required for golangci-lint v2; v1.64.8 cannot lint Go 1.25.
           version: v2.12.2
           args: --timeout=5m
-          install-mode: binary
 
   build:
     name: Build
