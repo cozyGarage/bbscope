@@ -49,7 +49,7 @@ jobs:
           cache: true
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           # Action v7+ is required for golangci-lint v2; v1.64.8 cannot lint Go 1.26.
           version: v2.12.2
