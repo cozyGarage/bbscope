@@ -27,7 +27,8 @@ higher-level, human-curated changes.
 - Split `pkg/storage` into `storage.go` / `schema.go` / `upsert.go` /
   `queries.go` / `programs.go` (no behavior change).
 - Migrated the PostgreSQL driver from `lib/pq` to `jackc/pgx/v5` via
-  `database/sql` (`pgx/stdlib`), keeping Go 1.24.
+  `database/sql` (`pgx/stdlib`); toolchain raised to Go 1.25 for current
+  module and stdlib security fixes (`pgx` v5.9.2, `x/net` v0.55, `x/text` v0.39).
 - HTTP client caps response bodies at 100 MiB; the `--proxy` transport uses a
   modern TLS 1.2 floor instead of pinning TLS 1.1.
 - Upgraded `cobra` (1.2.1 → 1.10.x) and `viper` (1.8.1 → 1.21.x); pinned
