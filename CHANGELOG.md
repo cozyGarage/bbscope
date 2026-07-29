@@ -28,18 +28,22 @@ higher-level, human-curated changes.
   `queries.go` / `programs.go` (no behavior change).
 - Migrated the PostgreSQL driver from `lib/pq` to `jackc/pgx/v5` via
   `database/sql` (`pgx/stdlib`); toolchain raised to Go 1.26 (from 1.25) for current
-  module and stdlib security fixes (`pgx` v5.9.2, `x/net` v0.55, `x/text` v0.39).
+  module and stdlib security fixes (`pgx` v5.9.2, `x/net` v0.56, `x/text` v0.39).
 - HTTP client caps response bodies at 100 MiB; the `--proxy` transport uses a
   modern TLS 1.2 floor instead of pinning TLS 1.1.
 - Upgraded `cobra` (1.2.1 → 1.10.x) and `viper` (1.8.1 → 1.21.x); pinned
   `golangci-lint` in CI for reproducible linting.
+- Platform poller fixtures live under `testdata/`; `MockPoller` implements
+  `PlatformPoller` for `cmd/poll` orchestration tests.
 
 ### Fixed
 - `db get domains` no longer emits IP addresses or CIDR/IP ranges as domains.
 - HackerOne program listing and Intigriti fetching no longer retry unbounded;
   the Intigriti handle maps are no longer subject to a data race.
 - Worker/library code paths no longer call `log.Fatal`, so a single program's
-  error cannot terminate the whole run.
+  error cannot terminate the whole run (`pkg/scope` now warns and skips invalid
+  `--output` flags instead of aborting).
+- HackerOne scope-page retries are context-aware (same pattern as list retries).
 - `db shell` redacts the database URL and passes the password via `PGPASSWORD`
   instead of exposing it on the process command line.
 - Bugcrowd `poll bc` now honors `--category` for both target-group and

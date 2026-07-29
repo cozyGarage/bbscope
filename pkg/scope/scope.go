@@ -2,7 +2,6 @@ package scope
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
@@ -53,7 +52,9 @@ func createLine(scopeElement ScopeElement, url, outputFlags, delimiter string) s
 		case 'u':
 			line += url + delimiter
 		default:
-			log.Fatal("Invalid print flag")
+			// Unknown flags are skipped so a bad --output value cannot abort
+			// the whole polling run (library code must not call log.Fatal).
+			utils.Log.Warnf("ignoring invalid print flag %q", string(f))
 		}
 	}
 	return strings.TrimSuffix(line, delimiter)

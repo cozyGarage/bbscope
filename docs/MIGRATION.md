@@ -205,7 +205,7 @@ go mod tidy
 
 1. **Git History:** The git history will still reference sw33tLie. This is normal and expected.
 
-2. **Dependencies:** External dependencies (lib/pq, hashicorp/go-retryablehttp, etc.) don't need changes.
+2. **Dependencies:** External dependencies (`jackc/pgx/v5`, hashicorp/go-retryablehttp, etc.) don't need namespace changes. (PostgreSQL access uses `pgx/stdlib` via `database/sql`; `lib/pq` is no longer a dependency.)
 
 3. **Private Repo:** Since your repo is private, there are no external consumers to worry about.
 

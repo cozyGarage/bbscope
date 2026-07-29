@@ -121,13 +121,17 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 	currentPageURL := apiBaseURL + "/v1/hackers/programs/" + handle + "/structured_scopes?page%5Bnumber%5D=1&page%5Bsize%5D=100"
 	categoryStrings := scope.GetAllStringsForCategories(opts.Categories)
 
+	const maxScopeRetries = 3
 	for {
+		if err := ctx.Err(); err != nil {
+			return scope.ProgramData{}, err
+		}
+
 		var res *whttp.WHTTPRes
 		var err error
-		retries := 3
 		var statusCode int
 
-		for retries > 0 {
+		for attempt := 1; attempt <= maxScopeRetries; attempt++ {
 			res, err = whttp.SendHTTPRequest(&whttp.WHTTPReq{
 				Method:  "GET",
 				URL:     currentPageURL,
@@ -138,12 +142,18 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 				statusCode = res.StatusCode
 				break
 			}
-			retries--
-			time.Sleep(2 * time.Second)
+			utils.Log.Warnf("scope fetch for %s failed (attempt %d/%d): %v", handle, attempt, maxScopeRetries, err)
+			if attempt < maxScopeRetries {
+				select {
+				case <-ctx.Done():
+					return scope.ProgramData{}, ctx.Err()
+				case <-time.After(2 * time.Second):
+				}
+			}
 		}
 
-		if retries == 0 {
-			return scope.ProgramData{}, fmt.Errorf("failed to retrieve data for %s after 3 attempts with status %d", handle, statusCode)
+		if err != nil || res == nil || !strings.Contains(res.BodyString, "\"data\":") {
+			return scope.ProgramData{}, fmt.Errorf("failed to retrieve data for %s after %d attempts with status %d", handle, maxScopeRetries, statusCode)
 		}
 
 		assetCount := int(gjson.Get(res.BodyString, "data.#").Int())

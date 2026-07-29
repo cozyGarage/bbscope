@@ -204,6 +204,7 @@ func TestCreateLine(t *testing.T) {
 		{"target and category", "tc", ",", "*.example.com,wildcard"},
 		{"all fields", "tdcu", " | ", "*.example.com | Main wildcard | wildcard | https://hackerone.com/example"},
 		{"url only", "u", ",", "https://hackerone.com/example"},
+		{"invalid flag skipped", "tx", ",", "*.example.com"},
 	}
 
 	for _, tt := range tests {

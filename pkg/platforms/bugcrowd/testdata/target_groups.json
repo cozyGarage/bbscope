@@ -1,0 +1,4 @@
+{"groups":[
+		{"in_scope":true,"targets_url":"/programs/acme/targets.json"},
+		{"in_scope":false,"targets_url":"/programs/acme/oos.json"}
+	]}

@@ -1,0 +1,1 @@
+prefix "assets":[{"url":"https://app.acme.com","type":"websites_and_applications","description":"web"},{"url":"0xabc","type":"smart_contract","description":"vault"}] suffix

@@ -1,0 +1,4 @@
+{"engagements":[
+		{"briefUrl":"/acme","accessStatus":"open"},
+		{"briefUrl":"/private-co","accessStatus":"invite"}
+	],"paginationMeta":{"totalCount":2}}
