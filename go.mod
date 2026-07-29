@@ -1,6 +1,6 @@
 module github.com/cozyGarage/bbscope/v2
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.6.1
@@ -13,7 +13,7 @@ require (
 	github.com/tidwall/gjson v1.19.0
 	github.com/weppos/publicsuffix-go v0.50.0
 	github.com/zalando/go-keyring v0.2.6
-	golang.org/x/net v0.55.0
+	golang.org/x/net v0.56.0
 )
 
 require (
@@ -51,6 +51,6 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 )

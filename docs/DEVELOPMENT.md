@@ -24,7 +24,7 @@ This guide covers the development workflow, debugging techniques, and advanced t
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Go | 1.25+ | Primary language |
+| Go | 1.26+ | Primary language |
 | PostgreSQL | 12+ | Database |
 | Docker | Latest | Containerization |
 | Git | Latest | Version control |
