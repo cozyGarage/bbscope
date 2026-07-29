@@ -1,0 +1,8 @@
+{"data":{"scope":[
+		{"inScope":true,"targets":[
+			{"name":"app","uri":"https://app.acme.com","category":"website","description":"main"}
+		]},
+		{"inScope":false,"targets":[
+			{"name":"old","uri":"","category":"website","description":"retired"}
+		]}
+	]}}

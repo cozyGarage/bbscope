@@ -1,0 +1,4 @@
+{"targets":[
+		{"name":"www.acme.com","uri":"https://www.acme.com","category":"website","description":"web"},
+		{"name":"api.acme.com","uri":"","category":"api","description":"api"}
+	]}

@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -26,6 +29,20 @@ func withTestTransport(t *testing.T, url string) {
 	})
 }
 
+func readTestdata(t *testing.T, name string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	path := filepath.Join(filepath.Dir(thisFile), "testdata", name)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read testdata %s: %v", name, err)
+	}
+	return string(b)
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -39,8 +56,7 @@ func equal(a, b []string) bool {
 }
 
 func TestListProgramHandles(t *testing.T) {
-	// Mimic an RSC payload containing an embedded bounties array.
-	body := `self.__next_f.push([1,null]) "bounties":[{"id":"acme","inviteOnly":false},{"id":"secret","inviteOnly":true},{"id":"beta","inviteOnly":false}]`
+	body := readTestdata(t, "bounties_rsc.txt")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/bug-bounty/" {
@@ -67,7 +83,7 @@ func TestListProgramHandles(t *testing.T) {
 }
 
 func TestFetchProgramScope(t *testing.T) {
-	body := `prefix "assets":[{"url":"https://app.acme.com","type":"websites_and_applications","description":"web"},{"url":"0xabc","type":"smart_contract","description":"vault"}] suffix`
+	body := readTestdata(t, "assets_rsc.txt")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, body)

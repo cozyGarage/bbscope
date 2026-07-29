@@ -49,62 +49,35 @@ func TestAuthConfigDefaults(t *testing.T) {
 	}
 }
 
-// MockPoller implements PlatformPoller for testing
-type MockPoller struct {
-	name       string
-	authCalled bool
-	handles    []string
-	authError  error
-}
-
-func NewMockPoller(name string) *MockPoller {
-	return &MockPoller{
-		name:    name,
-		handles: []string{"program1", "program2"},
-	}
-}
-
-func (m *MockPoller) Name() string {
-	return m.name
-}
-
-func (m *MockPoller) Authenticate(ctx context.Context, cfg AuthConfig) error {
-	m.authCalled = true
-	return m.authError
-}
-
-func (m *MockPoller) ListProgramHandles(ctx context.Context, opts PollOptions) ([]string, error) {
-	return m.handles, nil
-}
-
-func (m *MockPoller) FetchProgramScope(ctx context.Context, handle string, opts PollOptions) (interface{}, error) {
-	return nil, nil
-}
-
 func TestMockPollerInterface(t *testing.T) {
 	mock := NewMockPoller("test")
 
-	// Test Name()
 	if mock.Name() != "test" {
 		t.Errorf("Name() = %v, want %v", mock.Name(), "test")
 	}
 
-	// Test Authenticate()
 	ctx := context.Background()
 	err := mock.Authenticate(ctx, AuthConfig{Username: "user", Token: "token"})
 	if err != nil {
 		t.Errorf("Authenticate() error = %v", err)
 	}
-	if !mock.authCalled {
+	if !mock.AuthCalled {
 		t.Error("Authenticate() was not called")
 	}
 
-	// Test ListProgramHandles()
 	handles, err := mock.ListProgramHandles(ctx, PollOptions{})
 	if err != nil {
 		t.Errorf("ListProgramHandles() error = %v", err)
 	}
 	if len(handles) != 2 {
 		t.Errorf("ListProgramHandles() returned %d handles, want 2", len(handles))
+	}
+
+	pd, err := mock.FetchProgramScope(ctx, "program1", PollOptions{})
+	if err != nil {
+		t.Fatalf("FetchProgramScope: %v", err)
+	}
+	if pd.Url != "https://example.com/program1" {
+		t.Errorf("Url = %q", pd.Url)
 	}
 }

@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -23,6 +26,20 @@ func withBaseURL(t *testing.T, url string) {
 	})
 }
 
+func readTestdata(t *testing.T, name string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	path := filepath.Join(filepath.Dir(thisFile), "testdata", name)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read testdata %s: %v", name, err)
+	}
+	return string(b)
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -36,13 +53,8 @@ func equal(a, b []string) bool {
 }
 
 func TestListProgramHandles(t *testing.T) {
-	bbpPage1 := `{"engagements":[
-		{"briefUrl":"/acme","accessStatus":"open"},
-		{"briefUrl":"/private-co","accessStatus":"invite"}
-	],"paginationMeta":{"totalCount":2}}`
-	vdpPage := `{"engagements":[
-		{"briefUrl":"/vdp-prog","accessStatus":"open"}
-	],"paginationMeta":{"totalCount":1}}`
+	bbpPage1 := readTestdata(t, "engagements_bbp.json")
+	vdpPage := readTestdata(t, "engagements_vdp.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/engagements.json") {
@@ -94,17 +106,9 @@ func TestListProgramHandles(t *testing.T) {
 }
 
 func TestFetchProgramScope_TargetGroups(t *testing.T) {
-	groups := `{"groups":[
-		{"in_scope":true,"targets_url":"/programs/acme/targets.json"},
-		{"in_scope":false,"targets_url":"/programs/acme/oos.json"}
-	]}`
-	inTargets := `{"targets":[
-		{"name":"www.acme.com","uri":"https://www.acme.com","category":"website","description":"web"},
-		{"name":"api.acme.com","uri":"","category":"api","description":"api"}
-	]}`
-	oosTargets := `{"targets":[
-		{"name":"blog.acme.com","uri":"https://blog.acme.com","category":"website","description":"blog"}
-	]}`
+	groups := readTestdata(t, "target_groups.json")
+	inTargets := readTestdata(t, "targets_in.json")
+	oosTargets := readTestdata(t, "targets_oos.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -139,7 +143,6 @@ func TestFetchProgramScope_TargetGroups(t *testing.T) {
 		t.Fatalf("expected OOS blog, got %+v", pd.OutOfScope)
 	}
 
-	// Category filter must honor opts.Categories (maps "url" → website/api/...).
 	pd, err = p.FetchProgramScope(context.Background(), "/acme", platforms.PollOptions{Categories: "url"})
 	if err != nil {
 		t.Fatalf("category filter FetchProgramScope: %v", err)
@@ -157,18 +160,8 @@ func TestFetchProgramScope_TargetGroups(t *testing.T) {
 }
 
 func TestFetchProgramScope_EngagementBrief(t *testing.T) {
-	html := `<html><body>
-		<div data-react-class="ResearcherEngagementBrief"
-		     data-api-endpoints='{"engagementBriefApi":{"getBriefVersionDocument":"/engagements/acme/brief/1"}}'></div>
-	</body></html>`
-	brief := `{"data":{"scope":[
-		{"inScope":true,"targets":[
-			{"name":"app","uri":"https://app.acme.com","category":"website","description":"main"}
-		]},
-		{"inScope":false,"targets":[
-			{"name":"old","uri":"","category":"website","description":"retired"}
-		]}
-	]}}`
+	html := readTestdata(t, "engagement_brief.html")
+	brief := readTestdata(t, "engagement_brief.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -211,7 +204,6 @@ func TestGetProgramHandles_WAFBanned(t *testing.T) {
 }
 
 func TestDefaultAPIBaseURL(t *testing.T) {
-	// Production default; other tests restore via Cleanup.
 	if apiBaseURL != "https://bugcrowd.com" {
 		t.Fatalf("apiBaseURL = %q, want https://bugcrowd.com", apiBaseURL)
 	}
