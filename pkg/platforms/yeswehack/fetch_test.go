@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -16,6 +19,20 @@ func withBaseURL(t *testing.T, url string) {
 	orig := apiBaseURL
 	apiBaseURL = url
 	t.Cleanup(func() { apiBaseURL = orig })
+}
+
+func readTestdata(t *testing.T, name string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	path := filepath.Join(filepath.Dir(thisFile), "testdata", name)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read testdata %s: %v", name, err)
+	}
+	return string(b)
 }
 
 func equal(a, b []string) bool {
@@ -31,11 +48,7 @@ func equal(a, b []string) bool {
 }
 
 func TestListProgramHandles(t *testing.T) {
-	list := `{"items":[
-		{"slug":"acme","bounty":true,"public":true,"disabled":false},
-		{"slug":"private-co","bounty":false,"public":false,"disabled":false},
-		{"slug":"dead","bounty":true,"public":true,"disabled":true}
-	],"pagination":{"nb_pages":1}}`
+	list := readTestdata(t, "programs_list.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, list)
@@ -66,10 +79,7 @@ func TestListProgramHandles(t *testing.T) {
 }
 
 func TestFetchProgramScope(t *testing.T) {
-	body := `{"scopes":[
-		{"scope":"*.acme.com","scope_type":"web-application"},
-		{"scope":"api.acme.com","scope_type":"api"}
-	],"out_of_scope":["blog.acme.com"]}`
+	body := readTestdata(t, "program_scope.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/programs/acme") {

@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -18,6 +21,20 @@ func withBaseURL(t *testing.T, url string) {
 	t.Cleanup(func() { apiBaseURL = orig })
 }
 
+func readTestdata(t *testing.T, name string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	path := filepath.Join(filepath.Dir(thisFile), "testdata", name)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read testdata %s: %v", name, err)
+	}
+	return string(b)
+}
+
 func newPoller(t *testing.T) *Poller {
 	t.Helper()
 	p := NewPoller()
@@ -28,13 +45,8 @@ func newPoller(t *testing.T) *Poller {
 }
 
 func TestListAndFetch(t *testing.T) {
-	list := `{"maxCount":1,"records":[
-		{"id":"123","maxBounty":{"value":1000},"confidentialityLevel":{"id":2},"webLinks":{"detail":"detail=/programs/acme/acme-web/detail"}}
-	]}`
-	scopeBody := `{"domains":{"content":[
-		{"endpoint":"*.acme.com","type":{"id":7,"value":"Wildcard"},"tier":{"id":1},"description":"main"},
-		{"endpoint":"oos.acme.com","type":{"id":1,"value":"Url"},"tier":{"id":5},"description":"excluded"}
-	]}}`
+	list := readTestdata(t, "programs_list.json")
+	scopeBody := readTestdata(t, "program_scope.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

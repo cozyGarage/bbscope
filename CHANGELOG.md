@@ -17,6 +17,8 @@ higher-level, human-curated changes.
 - `TEST_DB_URL`-gated PostgreSQL integration tests for the storage layer, plus
   broader unit tests for the AI, notify, wildcards, and poll-orchestration code.
 - httptest-backed Bugcrowd and Immunefi poller tests (completing provider coverage).
+- HackerOne, Intigriti, and YesWeHack poller fixtures under each package's
+  `testdata/` directory (matching Bugcrowd/Immunefi).
 - Dependabot configuration and a Codecov coverage gate.
 - Project meta: `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.editorconfig`, issue and
   pull-request templates.

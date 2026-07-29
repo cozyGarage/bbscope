@@ -1,0 +1,4 @@
+{"scopes":[
+		{"scope":"*.acme.com","scope_type":"web-application"},
+		{"scope":"api.acme.com","scope_type":"api"}
+	],"out_of_scope":["blog.acme.com"]}
