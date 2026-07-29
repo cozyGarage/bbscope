@@ -134,7 +134,7 @@ func (e *EmailNotifier) sendWithTLS(addr, message string) error {
 func formatEmailSubject(event ChangeEvent) string {
 	emoji := getEmailEmoji(event.Type)
 	return fmt.Sprintf("%s bbscope: %s scope change on %s",
-		emoji, event.Type, event.Platform)
+		emoji, sanitizeHeaderField(event.Type), sanitizeHeaderField(event.Platform))
 }
 
 // formatEmailBody creates an HTML email body from a change event
@@ -154,6 +154,19 @@ func formatEmailBody(event ChangeEvent) string {
 		bountyBadge = `<span style="background-color: #ffc107; color: black; padding: 2px 8px; border-radius: 3px;">💰 Bounty</span>`
 	} else {
 		bountyBadge = `<span style="background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 3px;">No Bounty</span>`
+	}
+
+	platform := escapeHTMLText(event.Platform)
+	changeType := escapeHTMLText(event.Type)
+	category := escapeHTMLText(event.Category)
+	target := escapeHTMLText(event.Target)
+	handle := escapeHTMLText(event.ProgramHandle)
+	programHref := safeHTTPURL(event.ProgramURL)
+	programHTML := handle
+	if programHref != "" {
+		programHTML = fmt.Sprintf(`<a href="%s">%s</a>`, escapeHTMLText(programHref), handle)
+	} else if event.ProgramURL != "" {
+		programHTML = escapeHTMLText(event.ProgramURL)
 	}
 
 	return fmt.Sprintf(`
@@ -192,7 +205,7 @@ func formatEmailBody(event ChangeEvent) string {
             </div>
             <div class="field">
                 <span class="label">Program:</span>
-                <span class="value"><a href="%s">%s</a></span>
+                <span class="value">%s</span>
             </div>
             <div class="field">
                 <span class="label">Status:</span>
@@ -212,15 +225,14 @@ func formatEmailBody(event ChangeEvent) string {
 `,
 		color,
 		emoji,
-		event.Platform,
-		event.Type,
-		event.Category,
-		event.Target,
-		event.ProgramURL,
-		event.ProgramHandle,
+		platform,
+		changeType,
+		category,
+		target,
+		programHTML,
 		scopeBadge,
 		bountyBadge,
-		event.OccurredAt.Format(time.RFC1123),
+		escapeHTMLText(event.OccurredAt.Format(time.RFC1123)),
 	)
 }
 

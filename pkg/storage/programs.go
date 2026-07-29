@@ -58,14 +58,17 @@ func (d *DB) GetActiveProgramCount(ctx context.Context, platform string) (int, e
 
 // SyncPlatformPrograms marks programs that are no longer returned by a platform's API as 'disabled'
 // and logs their removal as a single event, preventing spam from individual target removals.
+// Targets are retained (soft-disable only) so a bad poll cannot permanently wipe scope data.
 func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledProgramURLs []string) ([]Change, error) {
 	now := time.Now().UTC()
 	changes := make([]Change, 0)
 
 	// 1. Create a set of polled URLs for efficient lookup.
 	polledURLSet := make(map[string]struct{}, len(polledProgramURLs))
-	for _, url := range polledProgramURLs {
-		polledURLSet[url] = struct{}{}
+	for _, u := range polledProgramURLs {
+		if normalized := NormalizeProgramURL(u); normalized != "" {
+			polledURLSet[normalized] = struct{}{}
+		}
 	}
 
 	// 2. Get all active programs for this platform from the DB (read operation, no transaction needed).
@@ -85,18 +88,25 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 		Handle string
 	}
 	var toRemove []programToRemove
+	activeCount := 0
 
 	for rows.Next() {
 		var p programToRemove
 		if err := rows.Scan(&p.ID, &p.URL, &p.Handle); err != nil {
 			return nil, err
 		}
-		if _, found := polledURLSet[p.URL]; !found {
+		activeCount++
+		if _, found := polledURLSet[NormalizeProgramURL(p.URL)]; !found {
 			toRemove = append(toRemove, p)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	if shouldAbortPartialSync(activeCount, len(toRemove)) {
+		return nil, fmt.Errorf("%w: would disable %d of %d active %s programs",
+			ErrAbortingPartialSync, len(toRemove), activeCount, platform)
 	}
 
 	// 3. For each program that was not in the latest poll, process its removal
@@ -113,19 +123,14 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 			return nil, fmt.Errorf("disabling program %d: %w", p.ID, err)
 		}
 
-		// Delete associated targets
-		if _, err := tx.ExecContext(ctx, `DELETE FROM targets_raw WHERE program_id = $1`, p.ID); err != nil {
-			_ = tx.Rollback()
-			return nil, fmt.Errorf("deleting targets for program %d: %w", p.ID, err)
-		}
-
 		// Create a single "removed" change event for the entire program
+		normalizedProgramURL := NormalizeProgramURL(p.URL)
 		change := Change{
 			OccurredAt:       now,
-			ProgramURL:       p.URL,
+			ProgramURL:       normalizedProgramURL,
 			Platform:         platform,
 			Handle:           p.Handle,
-			TargetNormalized: p.URL, // Use the program URL as the "target"
+			TargetNormalized: normalizedProgramURL, // Use the program URL as the "target"
 			TargetRaw:        p.URL,
 			Category:         "program",
 			InScope:          false,
@@ -186,17 +191,8 @@ func (d *DB) AddCustomTarget(ctx context.Context, target, category, programURL s
 	defer func() { _ = tx.Rollback() }()
 
 	var programID int64
-	programRow := tx.QueryRowContext(ctx, `
-		INSERT INTO programs(platform, handle, url, first_seen_at, last_seen_at)
-		VALUES($1,$2,$3,CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		ON CONFLICT(url) DO UPDATE SET
-			platform = excluded.platform,
-			handle = excluded.handle,
-			last_seen_at = CURRENT_TIMESTAMP,
-			disabled = 0
-		RETURNING id
-	`, platform, handle, programURL)
-	if err = programRow.Scan(&programID); err != nil {
+	programID, err = d.getOrCreateProgramTx(ctx, tx, programURL, platform, handle)
+	if err != nil {
 		return false, fmt.Errorf("upserting custom program: %w", err)
 	}
 

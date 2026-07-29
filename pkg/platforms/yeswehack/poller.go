@@ -56,6 +56,9 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		if err != nil {
 			return nil, err
 		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return nil, fmt.Errorf("yeswehack: listing programs failed with status %d", res.StatusCode)
+		}
 
 		data := gjson.GetMany(res.BodyString, "items.#.slug", "items.#.bounty", "items.#.public", "items.#.disabled")
 		allCompanySlugs := data[0].Array()
@@ -94,6 +97,9 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 
 	if err != nil {
 		return pData, err
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return pData, fmt.Errorf("yeswehack: fetching program %s failed with status %d", handle, res.StatusCode)
 	}
 
 	chunkData := gjson.GetMany(res.BodyString, "scopes.#.scope", "scopes.#.scope_type", "out_of_scope")

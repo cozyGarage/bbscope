@@ -48,3 +48,8 @@ higher-level, human-curated changes.
   `identity.bugcrowd.com`, while still rejecting off-origin hosts.
 - YesWeHack TOTP verification payload is JSON-marshaled instead of string-concatenated.
 - `pkg/whttp` invalid-URL unit test no longer burns ~3 minutes on default retries.
+- `SyncPlatformPrograms` soft-disables missing programs (retains targets) and
+  aborts mass disables from partial polls.
+- `UpsertProgramEntries` reads and writes under one transaction with row locks.
+- Notify channels escape untrusted scope fields; AI variants must derive from
+  the source URI; Immunefi/IT/YWH treat HTTP/parse failures as errors.

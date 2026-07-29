@@ -13,15 +13,52 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
-// getOrCreateProgram handles the atomic retrieval or creation of a program entry.
-func (d *DB) getOrCreateProgram(ctx context.Context, programURL, platform, handle string) (int64, error) {
-	tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
+// getOrCreateProgramTx upserts a program row inside an existing transaction.
+// programURL is canonicalized via NormalizeProgramURL. Legacy trailing-slash
+// variants are reused when present so we do not create duplicate programs.
+func (d *DB) getOrCreateProgramTx(ctx context.Context, tx *sql.Tx, programURL, platform, handle string) (int64, error) {
+	programURL = NormalizeProgramURL(programURL)
 	var programID int64
+
+	err := tx.QueryRowContext(ctx, `
+		SELECT id FROM programs
+		WHERE platform = $1 AND (
+			url = $2 OR
+			url = $2 || '/' OR
+			rtrim(url, '/') = rtrim($2, '/')
+		)
+		ORDER BY id ASC
+		LIMIT 1
+	`, platform, programURL).Scan(&programID)
+	if err == nil {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE programs
+			SET platform = $1,
+			    handle = $2,
+			    url = $3,
+			    last_seen_at = CURRENT_TIMESTAMP,
+			    disabled = 0
+			WHERE id = $4
+		`, platform, handle, programURL, programID); err != nil {
+			// URL rewrite can fail if another row already owns the canonical URL.
+			// Fall back to updating metadata without changing url.
+			if _, err2 := tx.ExecContext(ctx, `
+				UPDATE programs
+				SET platform = $1,
+				    handle = $2,
+				    last_seen_at = CURRENT_TIMESTAMP,
+				    disabled = 0
+				WHERE id = $3
+			`, platform, handle, programID); err2 != nil {
+				return 0, fmt.Errorf("updating program: %w", err2)
+			}
+		}
+		return programID, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("looking up program: %w", err)
+	}
+
 	row := tx.QueryRowContext(ctx, `
 		INSERT INTO programs(platform, handle, url, first_seen_at, last_seen_at)
 		VALUES($1,$2,$3,CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -35,17 +72,34 @@ func (d *DB) getOrCreateProgram(ctx context.Context, programURL, platform, handl
 	if err := row.Scan(&programID); err != nil {
 		return 0, fmt.Errorf("upserting program: %w", err)
 	}
-
-	return programID, tx.Commit()
+	return programID, nil
 }
 
 func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, handle string, entries []UpsertEntry) ([]Change, error) {
 	now := time.Now().UTC()
+	programURL = NormalizeProgramURL(programURL)
+
+	// Hold one transaction across read/diff/write so concurrent upserts for the
+	// same program cannot compute conflicting diffs from a stale snapshot.
+	tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("beginning upsert transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
 
 	// 1. Get or create program
-	programID, err := d.getOrCreateProgram(ctx, programURL, platform, handle)
+	programID, err := d.getOrCreateProgramTx(ctx, tx, programURL, platform, handle)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create program: %w", err)
+	}
+	var lockedProgramID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM programs WHERE id = $1 FOR UPDATE`, programID).Scan(&lockedProgramID); err != nil {
+		return nil, fmt.Errorf("locking program %d: %w", programID, err)
 	}
 
 	type existingVariant struct {
@@ -145,11 +199,15 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	}
 
 	// 2. Load existing targets for this program
-	rows, err := d.sql.QueryContext(ctx, "SELECT id, target, category, in_scope, description, is_bbp FROM targets_raw WHERE program_id = $1", programID)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, target, category, in_scope, description, is_bbp
+		FROM targets_raw
+		WHERE program_id = $1
+		FOR UPDATE
+	`, programID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	existingMap := make(map[string]*existingTarget)
 	existingByID := make(map[int64]*existingTarget)
@@ -161,6 +219,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			desc               sql.NullString
 		)
 		if err = rows.Scan(&id, &raw, &cat, &inScope, &desc, &isBBP); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		key := identityKey(raw, cat)
@@ -176,12 +235,16 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		existingMap[key] = ex
 		existingByID[id] = ex
 	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
 	if err = rows.Close(); err != nil {
 		return nil, err
 	}
 
 	// 3. Load existing AI enhancements tied to those targets
-	variantRows, err := d.sql.QueryContext(ctx, `
+	variantRows, err := tx.QueryContext(ctx, `
 		SELECT v.id, v.target_id, v.target_ai_normalized, v.category, v.in_scope
 		FROM targets_ai_enhanced v
 		JOIN targets_raw t ON v.target_id = t.id
@@ -190,7 +253,6 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	if err != nil {
 		return nil, err
 	}
-	defer variantRows.Close()
 
 	for variantRows.Next() {
 		var (
@@ -200,6 +262,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 			inScopeNS    sql.NullInt64
 		)
 		if err := variantRows.Scan(&id, &targetID, &normAI, &catNS, &inScopeNS); err != nil {
+			_ = variantRows.Close()
 			return nil, err
 		}
 		if target, ok := existingByID[targetID]; ok {
@@ -217,6 +280,10 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 				}
 			}
 		}
+	}
+	if err := variantRows.Err(); err != nil {
+		_ = variantRows.Close()
+		return nil, err
 	}
 	if err := variantRows.Close(); err != nil {
 		return nil, err
@@ -324,19 +391,7 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 	}
 
-	// 5. Apply every write below inside a single transaction so that a failure
-	// partway through never leaves partial adds/updates/removals committed.
-	tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("beginning upsert transaction: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-
+	// 5. Apply every write below in the same transaction opened for read/diff.
 	if len(toAdd) > 0 {
 		// Prepare arrays for bulk insert using UNNEST
 		targets := make([]string, len(toAdd))

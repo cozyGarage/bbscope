@@ -11,15 +11,25 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 var (
 	// ErrAbortingScopeWipe is returned when an update would wipe all targets from a program.
 	ErrAbortingScopeWipe = errors.New("aborting update to prevent wiping out all targets for a program")
+	// ErrAbortingPartialSync is returned when SyncPlatformPrograms would disable an
+	// implausibly large fraction of active programs (likely a partial/failed poll).
+	ErrAbortingPartialSync = errors.New("aborting platform sync to prevent mass program disable from a partial poll")
 	// ErrInvalidDatabaseName is returned when the database name contains invalid characters.
 	ErrInvalidDatabaseName = errors.New("invalid database name: must start with letter or underscore, contain only alphanumeric and underscore, max 63 chars")
 	// validDBNameRegex matches valid PostgreSQL identifiers
 	validDBNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+)
+
+const (
+	syncPartialDisableMinActive = 10
+	syncPartialDisableMaxRatio  = 0.5
 )
 
 // redactConnectionString redacts the password from a connection string for safe logging
@@ -162,12 +172,19 @@ func nullIfEmpty(s string) interface{} {
 }
 
 func identityKey(raw, category string) string {
-	raw = strings.TrimSpace(strings.ToLower(raw))
+	raw = NormalizeTarget(raw)
 	if raw == "" {
 		return ""
 	}
-	category = strings.TrimSpace(strings.ToLower(category))
+	category = scope.NormalizeCategory(category)
 	return raw + "|" + category
+}
+
+func shouldAbortPartialSync(activeCount, removeCount int) bool {
+	if activeCount < syncPartialDisableMinActive || removeCount <= 0 {
+		return false
+	}
+	return float64(removeCount) > float64(activeCount)*syncPartialDisableMaxRatio
 }
 
 func boolToInt(b bool) int {
