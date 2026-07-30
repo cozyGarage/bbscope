@@ -1,0 +1,4 @@
+{"domains":{"content":[
+		{"endpoint":"*.acme.com","type":{"id":7,"value":"Wildcard"},"tier":{"id":1},"description":"main"},
+		{"endpoint":"oos.acme.com","type":{"id":1,"value":"Url"},"tier":{"id":5},"description":"excluded"}
+	]}}

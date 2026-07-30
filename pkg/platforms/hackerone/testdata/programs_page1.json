@@ -1,0 +1,5 @@
+{"data":[
+		{"attributes":{"handle":"open-bounty","state":"public_mode","submission_state":"open","offers_bounties":true}},
+		{"attributes":{"handle":"private-prog","state":"soft_launched","submission_state":"open","offers_bounties":false}},
+		{"attributes":{"handle":"closed-prog","state":"public_mode","submission_state":"disabled","offers_bounties":true}}
+	],"links":{"next":"%s/v1/hackers/programs?page=2"}}

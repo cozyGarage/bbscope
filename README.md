@@ -430,7 +430,11 @@ Launch an interactive terminal dashboard to browse stored scope, view stats, and
 
 **Usage:** `bbscope tui`
 
-See [docs/TUI_QUICKREF.md](docs/TUI_QUICKREF.md) for keyboard shortcuts.
+See [docs/TUI_QUICKREF.md](docs/TUI_QUICKREF.md) for keyboard shortcuts and
+[docs/TUI_ARCHITECTURE.md](docs/TUI_ARCHITECTURE.md) for implementation notes.
+Upgrading from the old `sw33tLie/bbscope` module path? See
+[docs/MIGRATION.md](docs/MIGRATION.md). The full docs index lives in
+[docs/README.md](docs/README.md).
 
 ---
 

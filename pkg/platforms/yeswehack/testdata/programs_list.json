@@ -1,0 +1,5 @@
+{"items":[
+		{"slug":"acme","bounty":true,"public":true,"disabled":false},
+		{"slug":"private-co","bounty":false,"public":false,"disabled":false},
+		{"slug":"dead","bounty":true,"public":true,"disabled":true}
+	],"pagination":{"nb_pages":1}}

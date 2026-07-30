@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,15 +22,23 @@ func withBaseURL(t *testing.T, url string) {
 	t.Cleanup(func() { apiBaseURL = orig })
 }
 
+func readTestdata(t *testing.T, name string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	path := filepath.Join(filepath.Dir(thisFile), "testdata", name)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read testdata %s: %v", name, err)
+	}
+	return string(b)
+}
+
 func TestListProgramHandles(t *testing.T) {
-	page1 := `{"data":[
-		{"attributes":{"handle":"open-bounty","state":"public_mode","submission_state":"open","offers_bounties":true}},
-		{"attributes":{"handle":"private-prog","state":"soft_launched","submission_state":"open","offers_bounties":false}},
-		{"attributes":{"handle":"closed-prog","state":"public_mode","submission_state":"disabled","offers_bounties":true}}
-	],"links":{"next":"%s/v1/hackers/programs?page=2"}}`
-	page2 := `{"data":[
-		{"attributes":{"handle":"second-page","state":"public_mode","submission_state":"open","offers_bounties":false}}
-	],"links":{}}`
+	page1Tpl := readTestdata(t, "programs_page1.json")
+	page2 := readTestdata(t, "programs_page2.json")
 
 	var srvURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +46,7 @@ func TestListProgramHandles(t *testing.T) {
 			_, _ = io.WriteString(w, page2)
 			return
 		}
-		_, _ = io.WriteString(w, fmt.Sprintf(page1, srvURL))
+		_, _ = io.WriteString(w, fmt.Sprintf(page1Tpl, srvURL))
 	}))
 	defer srv.Close()
 	srvURL = srv.URL
@@ -66,11 +77,7 @@ func TestListProgramHandles(t *testing.T) {
 }
 
 func TestFetchProgramScope(t *testing.T) {
-	body := `{"data":[
-		{"attributes":{"asset_type":"URL","asset_identifier":"in.example.com","eligible_for_submission":true,"eligible_for_bounty":true,"instruction":"scope"}},
-		{"attributes":{"asset_type":"URL","asset_identifier":"oos.example.com","eligible_for_submission":false,"eligible_for_bounty":false,"instruction":"no"}},
-		{"attributes":{"asset_type":"CIDR","asset_identifier":"10.0.0.0/8","eligible_for_submission":true,"eligible_for_bounty":true,"instruction":"net"}}
-	],"links":{}}`
+	body := readTestdata(t, "structured_scopes.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, body)
@@ -116,9 +123,7 @@ func TestAllowSameOriginNextURL(t *testing.T) {
 }
 
 func TestListProgramHandlesRejectsOffOriginNext(t *testing.T) {
-	page1 := `{"data":[
-		{"attributes":{"handle":"open-bounty","state":"public_mode","submission_state":"open","offers_bounties":true}}
-	],"links":{"next":"https://evil.example/v1/hackers/programs?page=2"}}`
+	page1 := readTestdata(t, "programs_off_origin_next.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, page1)
