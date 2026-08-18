@@ -244,7 +244,15 @@ func IsIPRange(ipRange string) bool {
 
 // RedactURL redacts the password from a URL string for safe logging.
 // Example: "postgres://user:secret@host/db" -> "postgres://user:****@host/db"
+//
+// Inputs with no scheme are not URLs and may be libpq keyword/value DSNs
+// ("host=... password=..."), which url.Parse accepts without populating User.
+// Those are refused outright rather than echoed back with the password intact.
 func RedactURL(rawURL string) string {
+	if !strings.Contains(rawURL, "://") && strings.Contains(rawURL, "=") {
+		return "[redacted non-URL connection string]"
+	}
+
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		// If we can't parse it, return a generic redacted message

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -181,11 +182,27 @@ func TestShouldAbortPartialSync(t *testing.T) {
 		removeCount int
 		want        bool
 	}{
-		{"below active threshold", 9, 9, false},
 		{"no removals", 10, 0, false},
 		{"exactly half", 10, 5, false},
 		{"more than half", 10, 6, true},
 		{"larger platform over ratio", 100, 51, true},
+
+		// The ratio applies at every scale. These previously returned false
+		// because platforms with fewer than ten active programs were exempt,
+		// which let one bad poll disable every program a small platform had.
+		{"small platform wiped entirely", 9, 9, true},
+		{"small platform over ratio", 4, 3, true},
+		{"small platform at ratio", 4, 2, false},
+		{"two programs, one removed", 2, 1, false},
+		{"two programs, both removed", 2, 2, true},
+
+		// A one-program platform has no ratio that separates a genuine removal
+		// from a bad poll; refusing it would strand the platform permanently.
+		{"single program removed", 1, 1, false},
+
+		// Degenerate inputs.
+		{"no active programs", 0, 0, false},
+		{"negative removals", 10, -1, false},
 	}
 
 	for _, tt := range tests {
@@ -236,5 +253,54 @@ func TestEscapeLikePattern(t *testing.T) {
 	want := `100\%\_done\\now`
 	if got != want {
 		t.Fatalf("escapeLikePattern = %q, want %q", got, want)
+	}
+}
+
+// TestRedactConnectionStringNeverLeaksPassword covers both connection-string
+// forms pgx accepts. url.Parse succeeds on a keyword/value DSN without
+// populating User, so that form used to be returned with the password intact.
+func TestRedactConnectionStringNeverLeaksPassword(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "url form",
+			in:   "postgres://bbscope:s3cret@127.0.0.1:5432/bbscope?sslmode=disable",
+			want: "postgres://bbscope:%2A%2A%2A%2A@127.0.0.1:5432/bbscope?sslmode=disable",
+		},
+		{
+			name: "keyword value dsn",
+			in:   "host=db user=u password=s3cret dbname=bbscope",
+			want: "host=db user=u password=**** dbname=bbscope",
+		},
+		{
+			name: "quoted password containing spaces",
+			in:   "host=db password='s3 cret pass' dbname=bbscope",
+			want: "host=db password=**** dbname=bbscope",
+		},
+		{
+			name: "sslpassword and sslkey are secrets too",
+			in:   "host=db sslpassword=s3cret sslkey=/k/e/y",
+			want: "host=db sslpassword=**** sslkey=****",
+		},
+		{
+			name: "url with no password is untouched",
+			in:   "postgres://bbscope@127.0.0.1:5432/bbscope",
+			want: "postgres://bbscope@127.0.0.1:5432/bbscope",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactConnectionString(tc.in)
+			if got != tc.want {
+				t.Errorf("redactConnectionString(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			if strings.Contains(got, "s3cret") || strings.Contains(got, "s3 cret") {
+				t.Errorf("redactConnectionString(%q) leaked the password: %q", tc.in, got)
+			}
+		})
 	}
 }

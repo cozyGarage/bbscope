@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -150,5 +151,93 @@ func TestIntegration_ListRecentChanges(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected recent change for %q not found", platform)
+	}
+}
+
+// TestUpsertAllBlankTargetsAbortsWipe covers a poller that starts returning
+// blank targets — the shape of a platform markup change. The scope-wipe guard
+// used to count raw entries, so a non-empty batch of unusable entries cleared it
+// and then every existing target was collected for deletion.
+func TestUpsertAllBlankTargetsAbortsWipe(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+
+	ctx := context.Background()
+	programURL := "https://example.com/programs/" + platform
+	handle := "acme"
+
+	seed := mustBuildEntries(t, programURL, platform, handle, []TargetItem{
+		{URI: "api.example.com", Category: "url", InScope: true},
+		{URI: "*.example.com", Category: "wildcard", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, handle, seed); err != nil {
+		t.Fatalf("seeding targets: %v", err)
+	}
+
+	// Every entry here normalizes to an empty identity key, so none of them can
+	// be diffed against the seeded rows.
+	blank := mustBuildEntries(t, programURL, platform, handle, []TargetItem{
+		{URI: "   ", Category: "url", InScope: true},
+		{URI: "", Category: "wildcard", InScope: true},
+		{URI: "\t\n", Category: "url", InScope: true},
+	})
+	if len(blank) == 0 {
+		t.Fatal("expected BuildEntries to return the blank entries so the guard is actually exercised")
+	}
+
+	_, err := db.UpsertProgramEntries(ctx, programURL, platform, handle, blank)
+	if !errors.Is(err, ErrAbortingScopeWipe) {
+		t.Fatalf("expected ErrAbortingScopeWipe, got %v", err)
+	}
+
+	var remaining int
+	if err := db.sql.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM targets_raw tr
+		JOIN programs p ON tr.program_id = p.id
+		WHERE p.platform = $1
+	`, platform).Scan(&remaining); err != nil {
+		t.Fatalf("counting remaining targets: %v", err)
+	}
+	if remaining != 2 {
+		t.Fatalf("expected both seeded targets retained, got %d", remaining)
+	}
+}
+
+// TestUpsertMixedBlankTargetsRemovesOnlyAbsent confirms the corrected guard is
+// not over-eager: a batch that carries at least one usable entry must still
+// process normally, blank entries and all.
+func TestUpsertMixedBlankTargetsRemovesOnlyAbsent(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+
+	ctx := context.Background()
+	programURL := "https://example.com/programs/" + platform
+	handle := "acme"
+
+	seed := mustBuildEntries(t, programURL, platform, handle, []TargetItem{
+		{URI: "api.example.com", Category: "url", InScope: true},
+		{URI: "old.example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, handle, seed); err != nil {
+		t.Fatalf("seeding targets: %v", err)
+	}
+
+	next := mustBuildEntries(t, programURL, platform, handle, []TargetItem{
+		{URI: "api.example.com", Category: "url", InScope: true},
+		{URI: "  ", Category: "url", InScope: true},
+	})
+	changes, err := db.UpsertProgramEntries(ctx, programURL, platform, handle, next)
+	if err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	counts := countByType(changes)
+	if counts["removed"] != 1 {
+		t.Fatalf("expected exactly one removal (old.example.com), got %v", counts)
+	}
+	if counts["added"] != 0 {
+		t.Fatalf("blank entries must not be added as targets, got %v", counts)
 	}
 }

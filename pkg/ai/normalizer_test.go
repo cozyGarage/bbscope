@@ -141,3 +141,65 @@ func mustJSON(v any) string {
 	data, _ := json.MarshalIndent(v, "", "  ")
 	return string(data)
 }
+
+// TestVariantAllowedRejectsWidening pins the direction constraint: an AI
+// variant may restate or narrow the original target, never widen it. Accepting
+// a parent domain would report assets the program never put in scope.
+func TestVariantAllowedRejectsWidening(t *testing.T) {
+	tests := []struct {
+		name     string
+		original string
+		variant  string
+		want     bool
+	}{
+		// Widening — all must be rejected.
+		{"parent domain of a single host", "foo.example.com", "example.com", false},
+		{"public suffix label", "foo.example.com", "com", false},
+		{"wildcard over a single host", "foo.example.com", "*.example.com", false},
+		{"registrable domain of a deep host", "api.internal.example.co.uk", "example.co.uk", false},
+		{"sibling of the original", "foo.example.com", "bar.example.com", false},
+		{"parent of a wildcard base", "*.foo.example.com", "example.com", false},
+		{"unrelated host", "foo.example.com", "evil.com", false},
+		{"suffix-confusable host", "example.com", "example.com.evil.net", false},
+
+		// Restating or narrowing — all must be accepted.
+		{"exact restatement", "example.com", "example.com", true},
+		{"subdomain of the original", "example.com", "api.example.com", true},
+		{"apex of an explicit wildcard", "https://*.example.com/**", "example.com", true},
+		{"subdomain under an explicit wildcard", "*.example.com", "api.example.com", true},
+		{"completes a right-truncated original", "example.*", "example.com", true},
+		{"completes to a multi-label public suffix", "example.*", "example.co.uk", true},
+		{"alternation expansion", "example.(it|com)", "example.it", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := variantAllowed(tc.original, tc.variant); got != tc.want {
+				t.Errorf("variantAllowed(%q, %q) = %v, want %v", tc.original, tc.variant, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMergeNormalizedDropsWidenedVariants checks the constraint holds through
+// the merge path the poller actually calls, not just the predicate.
+func TestMergeNormalizedDropsWidenedVariants(t *testing.T) {
+	items := []storage.TargetItem{
+		{URI: "shop.example.com", Category: "url", Description: "storefront", InScope: true},
+	}
+	// The model proposes the apex plus a sibling; both widen scope.
+	norm := map[int]normalizedResult{
+		0: {Targets: []string{"example.com", "admin.example.com"}},
+	}
+
+	out := mergeNormalized(items, 0, norm)
+	if len(out) != 1 {
+		t.Fatalf("expected the original item preserved, got %d items", len(out))
+	}
+	if len(out[0].Variants) != 0 {
+		t.Fatalf("widened variants should be dropped, got %#v", out[0].Variants)
+	}
+	if out[0].URI != "shop.example.com" || out[0].Description != "storefront" || !out[0].InScope {
+		t.Fatalf("original item was altered: %#v", out[0])
+	}
+}

@@ -8,7 +8,7 @@ var getDomainsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		aggressive, _ := cmd.Flags().GetBool("aggressive")
 		platform, _ := cmd.Flags().GetString("platform")
-		return getAndPrintTargets("domains", platform, aggressive)
+		return getAndPrintTargets(cmd.Context(), "domains", platform, aggressive)
 	},
 }
 

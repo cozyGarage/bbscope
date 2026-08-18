@@ -60,21 +60,25 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			return nil, fmt.Errorf("yeswehack: listing programs failed with status %d", res.StatusCode)
 		}
 
-		data := gjson.GetMany(res.BodyString, "items.#.slug", "items.#.bounty", "items.#.public", "items.#.disabled")
-		allCompanySlugs := data[0].Array()
-		allRewarding := data[1].Array()
-		allPublic := data[2].Array()
-		allDisabled := data[3].Array()
-
-		for i := 0; i < len(allCompanySlugs); i++ {
-			if allDisabled[i].Bool() {
+		// Read each item as an object rather than zipping parallel `items.#.field`
+		// arrays: gjson omits absent fields instead of emitting null, so a single
+		// program missing an optional flag makes those arrays ragged and any
+		// positional index panics.
+		for _, item := range gjson.Get(res.BodyString, "items").Array() {
+			slug := item.Get("slug").String()
+			if slug == "" {
 				continue
 			}
-			if !opts.PrivateOnly || (opts.PrivateOnly && !allPublic[i].Bool()) {
-				if !opts.BountyOnly || (opts.BountyOnly && allRewarding[i].Bool()) {
-					handles = append(handles, allCompanySlugs[i].Str)
-				}
+			if item.Get("disabled").Bool() {
+				continue
 			}
+			if opts.PrivateOnly && item.Get("public").Bool() {
+				continue
+			}
+			if opts.BountyOnly && !item.Get("bounty").Bool() {
+				continue
+			}
+			handles = append(handles, slug)
 		}
 
 		nb_pages = int(gjson.Get(res.BodyString, "pagination.nb_pages").Int())
@@ -102,15 +106,18 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 		return pData, fmt.Errorf("yeswehack: fetching program %s failed with status %d", handle, res.StatusCode)
 	}
 
-	chunkData := gjson.GetMany(res.BodyString, "scopes.#.scope", "scopes.#.scope_type", "out_of_scope")
-
 	// Get the list of categories to filter by.
 	// If nil, we'll include all categories.
 	selectedCategories := scope.GetAllStringsForCategories(opts.Categories)
 
-	for i := 0; i < len(chunkData[0].Array()); i++ {
-		scopeType := chunkData[1].Array()[i].Str
-		target := chunkData[0].Array()[i].Str
+	// Read each scope entry as an object — see the note in ListProgramHandles
+	// about ragged `scopes.#.field` arrays.
+	for _, entry := range gjson.Get(res.BodyString, "scopes").Array() {
+		target := entry.Get("scope").String()
+		if target == "" {
+			continue
+		}
+		scopeType := entry.Get("scope_type").String()
 
 		// If selectedCategories is nil, it means "all" were selected, so we don't filter.
 		if selectedCategories == nil {
@@ -139,7 +146,7 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 	}
 
 	// Handle out of scope
-	outOfScopeItems := chunkData[2].Array()
+	outOfScopeItems := gjson.Get(res.BodyString, "out_of_scope").Array()
 	for _, item := range outOfScopeItems {
 		pData.OutOfScope = append(pData.OutOfScope, scope.ScopeElement{
 			Target:   item.String(),

@@ -290,7 +290,19 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 	}
 
 	// SAFETY CHECK
-	if len(entries) == 0 && len(existingMap) > 0 {
+	//
+	// Count entries that yield a usable identity key, not raw entries. Entries
+	// whose target normalizes to "" are skipped by the diff loop below, so a
+	// poller that starts returning blank targets — the shape of a platform markup
+	// change — would otherwise clear the guard and have every existing target
+	// collected into toRemove and deleted.
+	usableEntries := 0
+	for _, e := range entries {
+		if identityKey(e.TargetRaw, e.Category) != "" {
+			usableEntries++
+		}
+	}
+	if usableEntries == 0 && len(existingMap) > 0 {
 		return nil, ErrAbortingScopeWipe
 	}
 

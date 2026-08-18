@@ -28,22 +28,102 @@ var (
 )
 
 const (
-	syncPartialDisableMinActive = 10
-	syncPartialDisableMaxRatio  = 0.5
+	// redactedPlaceholder stands in for secrets in logged connection strings.
+	// Note: in URL form url.UserPassword percent-encodes it to "%2A%2A%2A%2A".
+	redactedPlaceholder = "****"
+
+	syncPartialDisableMaxRatio = 0.5
 )
 
-// redactConnectionString redacts the password from a connection string for safe logging
+// redactConnectionString redacts the password from a connection string for safe
+// logging. pgx accepts both URL form ("postgres://user:pass@host/db") and
+// keyword/value DSN form ("host=... password=..."); url.Parse succeeds on the
+// latter without populating User, so the DSN form is handled explicitly rather
+// than being returned verbatim.
 func redactConnectionString(connStr string) string {
+	if isKeywordValueDSN(connStr) {
+		return redactKeywordValueDSN(connStr)
+	}
 	parsed, err := url.Parse(connStr)
 	if err != nil {
 		return "[invalid connection string]"
 	}
 	if parsed.User != nil {
 		if _, hasPass := parsed.User.Password(); hasPass {
-			parsed.User = url.UserPassword(parsed.User.Username(), "****")
+			parsed.User = url.UserPassword(parsed.User.Username(), redactedPlaceholder)
 		}
 	}
 	return parsed.String()
+}
+
+// isKeywordValueDSN reports whether connStr looks like a libpq keyword/value
+// DSN rather than a URL. Anything carrying a scheme is treated as a URL.
+func isKeywordValueDSN(connStr string) bool {
+	if strings.Contains(connStr, "://") {
+		return false
+	}
+	return strings.Contains(connStr, "=")
+}
+
+// redactKeywordValueDSN replaces the value of every password-bearing keyword in
+// a libpq keyword/value DSN, preserving the rest for diagnostics. libpq allows
+// single-quoted values containing spaces, so values are tokenized rather than
+// split on whitespace — otherwise a quoted password would leak its tail.
+func redactKeywordValueDSN(dsn string) string {
+	var out []string
+	rest := dsn
+	for {
+		rest = strings.TrimLeft(rest, " \t")
+		if rest == "" {
+			break
+		}
+		key, remainder, found := strings.Cut(rest, "=")
+		if !found {
+			// Trailing junk with no "=": keep it as-is, it holds no value.
+			out = append(out, rest)
+			break
+		}
+		value, remainder := scanDSNValue(remainder)
+		if isSecretDSNKeyword(key) {
+			value = redactedPlaceholder
+		}
+		out = append(out, strings.TrimSpace(key)+"="+value)
+		rest = remainder
+	}
+	return strings.Join(out, " ")
+}
+
+// scanDSNValue consumes one keyword/value DSN value, honoring single quotes and
+// backslash escapes, and returns it alongside the unconsumed remainder.
+func scanDSNValue(s string) (value, rest string) {
+	var b strings.Builder
+	quoted := false
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '\'':
+			quoted = !quoted
+			b.WriteByte(c)
+		case c == '\\' && i+1 < len(s):
+			i++
+			b.WriteByte(c)
+			b.WriteByte(s[i])
+		case (c == ' ' || c == '\t') && !quoted:
+			return b.String(), s[i:]
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String(), ""
+}
+
+// isSecretDSNKeyword reports whether a DSN keyword carries a secret value.
+func isSecretDSNKeyword(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "password", "sslpassword", "sslkey":
+		return true
+	default:
+		return false
+	}
 }
 
 type DB struct {
@@ -180,8 +260,21 @@ func identityKey(raw, category string) string {
 	return raw + "|" + category
 }
 
+// shouldAbortPartialSync reports whether a sync would disable an implausibly
+// large share of a platform's active programs, which signals a partial or failed
+// poll rather than genuine removals.
+//
+// The ratio applies at every scale. An earlier version exempted platforms with
+// fewer than ten active programs, which let a single bad poll disable every
+// program a small platform had.
 func shouldAbortPartialSync(activeCount, removeCount int) bool {
-	if activeCount < syncPartialDisableMinActive || removeCount <= 0 {
+	if activeCount <= 0 || removeCount <= 0 {
+		return false
+	}
+	// Removing a lone program from a one-program platform is a legitimate,
+	// unambiguous removal; there is no ratio that can distinguish it from a bad
+	// poll, and refusing it would strand the platform permanently.
+	if activeCount == 1 {
 		return false
 	}
 	return float64(removeCount) > float64(activeCount)*syncPartialDisableMaxRatio

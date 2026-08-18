@@ -107,3 +107,84 @@ func TestFetchProgramScope(t *testing.T) {
 		t.Fatalf("expected OOS blog.acme.com, got %+v", pd.OutOfScope)
 	}
 }
+
+// TestListProgramHandlesRaggedFields covers programs that omit optional flags.
+// gjson's `items.#.field` path skips absent fields rather than emitting null,
+// so zipping those arrays positionally panicked on the first incomplete item.
+func TestListProgramHandlesRaggedFields(t *testing.T) {
+	const body = `{"items":[
+		{"slug":"complete","bounty":true,"public":true,"disabled":false},
+		{"slug":"sparse"},
+		{"slug":"gone","disabled":true}
+	],"pagination":{"nb_pages":1}}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	tests := []struct {
+		name string
+		opts platforms.PollOptions
+		want []string
+	}{
+		// A program missing "disabled" is not treated as disabled.
+		{"no filters", platforms.PollOptions{}, []string{"complete", "sparse"}},
+		// Missing "bounty" cannot be assumed to pay.
+		{"bounty only", platforms.PollOptions{BountyOnly: true}, []string{"complete"}},
+		// Missing "public" cannot be assumed public, so it survives the filter.
+		{"private only", platforms.PollOptions{PrivateOnly: true}, []string{"sparse"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewPoller("tok").ListProgramHandles(context.Background(), tc.opts)
+			if err != nil {
+				t.Fatalf("ListProgramHandles() error = %v", err)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("ListProgramHandles() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestFetchProgramScopeRaggedFields covers a scope entry with no scope_type,
+// which previously panicked while indexing the parallel scope_type array.
+func TestFetchProgramScopeRaggedFields(t *testing.T) {
+	const body = `{"scopes":[
+		{"scope":"api.example.com","scope_type":"web-application"},
+		{"scope":"no-type.example.com"},
+		{"scope_type":"web-application"}
+	],"out_of_scope":["legacy.example.com"]}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	pd, err := NewPoller("tok").FetchProgramScope(context.Background(), "acme", platforms.PollOptions{})
+	if err != nil {
+		t.Fatalf("FetchProgramScope() error = %v", err)
+	}
+
+	// Both entries carrying a target are kept; the one with no target is skipped.
+	want := []string{"api.example.com", "no-type.example.com"}
+	var got []string
+	for _, s := range pd.InScope {
+		got = append(got, s.Target)
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("InScope targets = %v, want %v", got, want)
+	}
+	if len(pd.InScope) > 1 && pd.InScope[1].Category != "" {
+		t.Errorf("entry without scope_type should carry an empty category, got %q", pd.InScope[1].Category)
+	}
+	if len(pd.OutOfScope) != 1 || pd.OutOfScope[0].Target != "legacy.example.com" {
+		t.Errorf("OutOfScope = %#v, want one legacy.example.com entry", pd.OutOfScope)
+	}
+}

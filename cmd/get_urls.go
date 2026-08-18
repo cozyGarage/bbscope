@@ -7,7 +7,7 @@ var getURLsCmd = &cobra.Command{
 	Short: "Get all targets that are URLs",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		platform, _ := cmd.Flags().GetString("platform")
-		return getAndPrintTargets("urls", platform, false)
+		return getAndPrintTargets(cmd.Context(), "urls", platform, false)
 	},
 }
 

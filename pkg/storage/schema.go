@@ -105,6 +105,10 @@ func applyMigrations(db *sql.DB) error {
 		}
 		applied[v] = true
 	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("reading applied migrations: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return err
 	}

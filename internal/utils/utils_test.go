@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -181,6 +182,34 @@ func TestSetLogLevel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Should not panic
 			SetLogLevel(tt.level)
+		})
+	}
+}
+
+// TestRedactURLRefusesNonURLConnectionStrings covers libpq keyword/value DSNs,
+// which url.Parse accepts without populating User — previously causing the raw
+// password to be echoed back to the caller for logging.
+func TestRedactURLRefusesNonURLConnectionStrings(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"url with password", "postgres://u:s3cret@host/db", "postgres://u:%2A%2A%2A%2A@host/db"},
+		{"keyword value dsn", "host=db user=u password=s3cret", "[redacted non-URL connection string]"},
+		{"url without password", "postgres://u@host/db", "postgres://u@host/db"},
+		{"host and port is not a URL", "127.0.0.1:5432", "[invalid URL]"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RedactURL(tc.in)
+			if got != tc.want {
+				t.Errorf("RedactURL(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			if strings.Contains(got, "s3cret") {
+				t.Errorf("RedactURL(%q) leaked the password: %q", tc.in, got)
+			}
 		})
 	}
 }

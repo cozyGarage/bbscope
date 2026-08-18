@@ -502,6 +502,11 @@ func sanitizeTargets(targets []string) []string {
 }
 
 // variantAllowed rejects LLM-invented targets that are not derived from the original URI.
+//
+// A variant may only restate or narrow the original. Widening is always
+// rejected: a program that scopes one host does not authorize its parent
+// domain, its siblings, or its public suffix, no matter how confidently the
+// model proposes them.
 func variantAllowed(original, variant string) bool {
 	variant = strings.ToLower(strings.TrimSpace(variant))
 	if variant == "" {
@@ -522,12 +527,16 @@ func variantAllowed(original, variant string) bool {
 	if base == "" {
 		return false
 	}
-	if variant == base || strings.HasPrefix(variant, base+".") || strings.HasSuffix(base, "."+variant) {
+	// Restating the base, or narrowing to a subdomain beneath it.
+	if variant == base || strings.HasSuffix(variant, "."+base) {
 		return true
 	}
-	// Wildcard cleanup may yield the registrable domain of a messy original.
-	if root, ok := storage.ExtractRootDomain(base); ok {
-		if variant == root || strings.HasSuffix(variant, "."+root) {
+	// Completing a right-truncated original such as "example.*": the base is a
+	// bare label and the variant must resolve to exactly that label plus a
+	// public suffix, so "example.com" is accepted while "example.com.evil.net"
+	// (registrable domain "evil.net") is not.
+	if !strings.Contains(base, ".") && strings.HasPrefix(variant, base+".") {
+		if root, ok := storage.ExtractRootDomain(variant); ok && root == variant {
 			return true
 		}
 	}

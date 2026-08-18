@@ -271,3 +271,20 @@ func TestIntegration_GetChangesBetween(t *testing.T) {
 		}
 	}
 }
+
+// TestIntegrationDatabaseIsConfiguredInCI fails when the integration suite would
+// silently skip in CI. The storage integration tests are gated on TEST_DB_URL,
+// and for a long time no CI job set it: they skipped on every push while the
+// suite still reported green, hiding the fact that the package owning every
+// destructive database operation was effectively untested.
+//
+// Locally, where TEST_DB_URL is genuinely optional, this test skips like the rest.
+func TestIntegrationDatabaseIsConfiguredInCI(t *testing.T) {
+	if os.Getenv("CI") == "" {
+		t.Skip("not running in CI; TEST_DB_URL is optional for local runs")
+	}
+	if os.Getenv("TEST_DB_URL") == "" {
+		t.Fatal("TEST_DB_URL is unset in CI: the storage integration tests would skip. " +
+			"Check the postgres service and TEST_DB_URL in .github/workflows/ci.yml.")
+	}
+}

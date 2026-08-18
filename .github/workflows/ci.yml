@@ -13,6 +13,29 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+
+    # The pkg/storage integration tests are gated on TEST_DB_URL and skip when it
+    # is unset. Without this service they never ran in CI, so the package that
+    # owns every destructive database operation reported ~6% coverage while
+    # appearing tested.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bbscope
+          POSTGRES_PASSWORD: bbscope
+          POSTGRES_DB: bbscope
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bbscope"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DB_URL: postgres://bbscope:bbscope@127.0.0.1:5432/bbscope?sslmode=disable
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
