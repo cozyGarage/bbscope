@@ -108,7 +108,7 @@ jobs:
           go build -ldflags "-s -w -X github.com/cozyGarage/bbscope/v2/cmd.Version=${VERSION} -X github.com/cozyGarage/bbscope/v2/cmd.Commit=${COMMIT} -X github.com/cozyGarage/bbscope/v2/cmd.BuildDate=${DATE}" -o bbscope-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bbscope-${{ matrix.goos }}-${{ matrix.goarch }}
           path: bbscope-${{ matrix.goos }}-${{ matrix.goarch }}*
