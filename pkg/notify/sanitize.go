@@ -83,3 +83,32 @@ func formatDiscordLink(label, rawURL string) string {
 func escapeDiscordInlineCode(s string) string {
 	return strings.ReplaceAll(s, "`", "'")
 }
+
+// discordMarkdownReplacer escapes Discord markdown control characters in
+// plain (non-code-span) field values so untrusted text (e.g. an AI-invented
+// scope category) cannot alter message formatting.
+var discordMarkdownReplacer = strings.NewReplacer(
+	"\\", "\\\\",
+	"*", "\\*",
+	"_", "\\_",
+	"~", "\\~",
+	"`", "\\`",
+	"|", "\\|",
+	">", "\\>",
+)
+
+// escapeDiscordMarkdown escapes Discord markdown control characters.
+func escapeDiscordMarkdown(s string) string {
+	return discordMarkdownReplacer.Replace(s)
+}
+
+// escapeSlackText escapes Slack mrkdwn's reserved characters. Escaping "<"
+// and ">" is required by Slack's format spec and also prevents untrusted
+// text from being interpreted as link or special-mention syntax (e.g.
+// "<!everyone>").
+func escapeSlackText(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"errors"
 
@@ -14,15 +15,9 @@ import (
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/ai"
-	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
-	bcplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/bugcrowd"
-	h1platform "github.com/cozyGarage/bbscope/v2/pkg/platforms/hackerone"
-	itplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/intigriti"
-	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
-	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
 
 // pollCmd implements: bbscope poll
@@ -44,65 +39,11 @@ var pollCmd = &cobra.Command{
 		}
 
 		proxyURL, _ := cmd.Flags().GetString("proxy")
-		if proxyURL != "" {
-			if err := whttp.SetupProxy(proxyURL); err != nil {
-				return err
-			}
+		// Parent poll includes all configured platforms (including Immunefi).
+		pollers, err := buildPollersFromConfig(cmd.Context(), proxyURL, nil)
+		if err != nil {
+			return err
 		}
-
-		var pollers []platforms.PlatformPoller
-
-		// Prefer keychain (via credentials.Get) with config-file fallback — matches poll subcommands.
-		h1User := credentials.Get("hackerone.username")
-		h1Token := credentials.Get("hackerone.token")
-		if h1User != "" && h1Token != "" {
-			pollers = append(pollers, h1platform.NewPoller(h1User, h1Token))
-		} else {
-			utils.Log.Info("Skipping HackerOne: credentials not found in keychain or config.")
-		}
-
-		bcEmail := credentials.Get("bugcrowd.email")
-		bcPass := credentials.Get("bugcrowd.password")
-		bcOTP := credentials.Get("bugcrowd.otpsecret")
-		if bcEmail != "" && bcPass != "" && bcOTP != "" {
-			bcPoller := &bcplatform.Poller{}
-			authCfg := platforms.AuthConfig{Email: bcEmail, Password: bcPass, OtpSecret: bcOTP, Proxy: proxyURL}
-			if err := bcPoller.Authenticate(cmd.Context(), authCfg); err != nil {
-				utils.Log.Errorf("Bugcrowd auth failed: %v", err)
-			} else {
-				pollers = append(pollers, bcPoller)
-			}
-		} else {
-			utils.Log.Info("Skipping Bugcrowd: email, password, or otpsecret not found in keychain or config.")
-		}
-
-		itToken := credentials.Get("intigriti.token")
-		if itToken != "" {
-			itPoller := itplatform.NewPoller()
-			if err := itPoller.Authenticate(cmd.Context(), platforms.AuthConfig{Token: itToken, Proxy: proxyURL}); err != nil {
-				utils.Log.Errorf("Intigriti auth failed: %v", err)
-			} else {
-				pollers = append(pollers, itPoller)
-			}
-		} else {
-			utils.Log.Info("Skipping Intigriti: token not found in keychain or config.")
-		}
-
-		ywhEmail := credentials.Get("yeswehack.email")
-		ywhPass := credentials.Get("yeswehack.password")
-		ywhOTP := credentials.Get("yeswehack.otpsecret")
-		if ywhEmail != "" && ywhPass != "" && ywhOTP != "" {
-			ywhPoller := &ywhplatform.Poller{}
-			authCfg := platforms.AuthConfig{Email: ywhEmail, Password: ywhPass, OtpSecret: ywhOTP, Proxy: proxyURL}
-			if err := ywhPoller.Authenticate(cmd.Context(), authCfg); err != nil {
-				utils.Log.Errorf("YesWeHack auth failed: %v", err)
-			} else {
-				pollers = append(pollers, ywhPoller)
-			}
-		} else {
-			utils.Log.Info("Skipping YesWeHack: email, password, or otpsecret not found in keychain or config.")
-		}
-
 		if len(pollers) == 0 {
 			utils.Log.Info("No platforms to poll. Set credentials with: bbscope config set <key>")
 			return nil
@@ -133,6 +74,19 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 	categories, _ := cmd.Flags().GetString("category")
 	useDB, _ := cmd.Flags().GetBool("db")
 	useAI, _ := cmd.Flags().GetBool("ai")
+	sinceStr, _ := cmd.Flags().GetString("since")
+
+	var since time.Time
+	if sinceStr != "" {
+		if !useDB {
+			return fmt.Errorf("--since requires --db")
+		}
+		parsed, err := time.Parse(time.RFC3339, sinceStr)
+		if err != nil {
+			return fmt.Errorf("invalid --since, need RFC3339: %w", err)
+		}
+		since = parsed
+	}
 
 	var db *storage.DB
 	if useDB {
@@ -155,13 +109,14 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 	if useAI {
 		proxyURL, _ := rootCmd.Flags().GetString("proxy")
 		cfg := ai.Config{
-			Provider:       strings.TrimSpace(viper.GetString("ai.provider")),
-			APIKey:         strings.TrimSpace(viper.GetString("ai.api_key")),
-			Model:          strings.TrimSpace(viper.GetString("ai.model")),
-			MaxBatch:       viper.GetInt("ai.max_batch"),
-			MaxConcurrency: viper.GetInt("ai.max_concurrency"),
-			Endpoint:       strings.TrimSpace(viper.GetString("ai.endpoint")),
-			Proxy:          strings.TrimSpace(viper.GetString("ai.proxy")),
+			Provider:           strings.TrimSpace(viper.GetString("ai.provider")),
+			APIKey:             strings.TrimSpace(viper.GetString("ai.api_key")),
+			Model:              strings.TrimSpace(viper.GetString("ai.model")),
+			MaxBatch:           viper.GetInt("ai.max_batch"),
+			MaxConcurrency:     viper.GetInt("ai.max_concurrency"),
+			Endpoint:           strings.TrimSpace(viper.GetString("ai.endpoint")),
+			Proxy:              strings.TrimSpace(viper.GetString("ai.proxy")),
+			InsecureSkipVerify: viper.GetBool("ai.insecure_skip_verify"),
 		}
 		// Command-line proxy flag takes precedence over config file
 		if proxyURL != "" {
@@ -213,11 +168,21 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 
 		var ignoredPrograms map[string]bool
 		if useDB {
-			var err error
-			ignoredPrograms, err = db.GetIgnoredPrograms(ctx, p.Name())
+			rawIgnored, err := db.GetIgnoredPrograms(ctx, p.Name())
 			if err != nil {
 				utils.Log.Warnf("Could not get ignored programs for %s: %v", p.Name(), err)
 				ignoredPrograms = make(map[string]bool) // Continue with an empty map
+			} else {
+				ignoredPrograms = make(map[string]bool, len(rawIgnored))
+				for u, v := range rawIgnored {
+					if !v {
+						continue
+					}
+					ignoredPrograms[u] = true
+					if n := storage.NormalizeProgramURL(u); n != "" {
+						ignoredPrograms[n] = true
+					}
+				}
 			}
 		}
 
@@ -246,7 +211,7 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		}
 
 		// Use concurrent processing with worker pool pattern
-		polledProgramURLs, err := processProgramsConcurrently(ctx, cmd, p, handles, opts, useDB, db, ignoredPrograms, isFirstRunForPlatform, concurrency, aiNormalizer)
+		polledProgramURLs, err := processProgramsConcurrently(ctx, cmd, p, handles, opts, useDB, db, ignoredPrograms, isFirstRunForPlatform, concurrency, aiNormalizer, since)
 		if err != nil {
 			// Do not abort remaining platforms, and skip SyncPlatformPrograms: a partial
 			// success list would incorrectly disable programs that only failed to fetch.
@@ -259,11 +224,14 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 			// This will mark any programs that were not in the latest poll as disabled.
 			removedProgramChanges, err := db.SyncPlatformPrograms(ctx, p.Name(), polledProgramURLs)
 			if err != nil {
-				// We can log this as a warning instead of returning a fatal error
-				utils.Log.Warnf("Failed to sync removed programs for platform %s: %v", p.Name(), err)
+				if errors.Is(err, storage.ErrAbortingPartialSync) {
+					utils.Log.Errorf("Skipping platform sync for %s: %v", p.Name(), err)
+				} else {
+					utils.Log.Warnf("Failed to sync removed programs for platform %s: %v", p.Name(), err)
+				}
 			}
 			if !isFirstRunForPlatform {
-				printChanges(removedProgramChanges)
+				printChanges(removedProgramChanges, since)
 			}
 			if !isFirstRunForPlatform {
 				if err := db.LogChanges(ctx, removedProgramChanges); err != nil {
@@ -276,7 +244,7 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 }
 
 // processProgramsConcurrently processes programs using a worker pool pattern for concurrent fetching.
-func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p platforms.PlatformPoller, handles []string, opts platforms.PollOptions, useDB bool, db *storage.DB, ignoredPrograms map[string]bool, isFirstRunForPlatform bool, concurrency int, aiNormalizer ai.Normalizer) ([]string, error) {
+func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p platforms.PlatformPoller, handles []string, opts platforms.PollOptions, useDB bool, db *storage.DB, ignoredPrograms map[string]bool, isFirstRunForPlatform bool, concurrency int, aiNormalizer ai.Normalizer, since time.Time) ([]string, error) {
 	if len(handles) == 0 {
 		return []string{}, nil
 	}
@@ -321,14 +289,14 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 					continue
 				}
 
-				if useDB && ignoredPrograms[pd.Url] {
+				if useDB && (ignoredPrograms[pd.Url] || ignoredPrograms[storage.NormalizeProgramURL(pd.Url)]) {
 					utils.Log.Debugf("Skipping ignored program: %s", pd.Url)
 					continue
 				}
 
-				// Add to polled URLs (thread-safe)
+				// Add to polled URLs (thread-safe); normalize so sync identity matches upsert.
 				mu.Lock()
-				polledProgramURLs = append(polledProgramURLs, pd.Url)
+				polledProgramURLs = append(polledProgramURLs, storage.NormalizeProgramURL(pd.Url))
 				mu.Unlock()
 
 				if !useDB {
@@ -409,7 +377,7 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 					continue
 				}
 
-				changes, err := db.UpsertProgramEntries(ctx, pd.Url, p.Name(), h, entries)
+				changes, err := db.UpsertProgramEntries(ctx, storage.NormalizeProgramURL(pd.Url), p.Name(), h, entries)
 
 				if err != nil {
 					if errors.Is(err, storage.ErrAbortingScopeWipe) {
@@ -428,7 +396,7 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 
 				// Print changes (thread-safe - fmt.Printf is safe for concurrent use)
 				if !isFirstRunForPlatform {
-					printChanges(changes)
+					printChanges(changes, since)
 				}
 				if !isFirstRunForPlatform {
 					if err := db.LogChanges(ctx, changes); err != nil {
@@ -453,10 +421,13 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 	return polledProgramURLs, firstError
 }
 
-func printChanges(changes []storage.Change) {
+func printChanges(changes []storage.Change, since time.Time) {
 	// Track which targets have variant changes (AI-normalized)
 	hasVariants := make(map[string]bool)
 	for _, c := range changes {
+		if !since.IsZero() && c.OccurredAt.Before(since) {
+			continue
+		}
 		if c.TargetAINormalized != "" {
 			key := fmt.Sprintf("%s|%s|%s", c.Platform, c.ProgramURL, c.TargetRaw)
 			hasVariants[key] = true
@@ -464,6 +435,9 @@ func printChanges(changes []storage.Change) {
 	}
 
 	for _, c := range changes {
+		if !since.IsZero() && c.OccurredAt.Before(since) {
+			continue
+		}
 		// Skip base target changes if there are variant changes for the same target
 		if c.TargetAINormalized == "" {
 			key := fmt.Sprintf("%s|%s|%s", c.Platform, c.ProgramURL, c.TargetRaw)

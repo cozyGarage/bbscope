@@ -2,33 +2,38 @@ package otp
 
 import (
 	"crypto/hmac"
-	"crypto/sha1" //nolint:gosec // sha1 is required by TOTP (RFC 4226)
+	"crypto/sha1" //nolint:gosec // sha1 is required by classic TOTP (RFC 4226)
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// GenerateTOTP creates a 6-digit TOTP code for the provided base32 secret at time t.
+// GenerateTOTP creates a TOTP code for the provided base32 secret at time t.
+// Supports otpauth:// URIs with digits, period, and algorithm (SHA1/SHA256/SHA512).
 func GenerateTOTP(secret string, t time.Time) (string, error) {
-	key, digits, err := parseTOTPSecret(secret)
+	key, digits, period, algo, err := parseTOTPSecret(secret)
 	if err != nil {
 		return "", err
 	}
-	// Ensure key is wiped after use for security
 	defer secureWipe(key)
 
 	digits = clampTOTPDigits(digits)
-	step := uint64(t.Unix() / 30) //nolint:gosec // safe conversion for TOTP time step
+	if period <= 0 {
+		period = 30
+	}
+	step := uint64(t.Unix() / int64(period)) //nolint:gosec // safe conversion for TOTP time step
 	var msg [8]byte
 	binary.BigEndian.PutUint64(msg[:], step)
-	mac := hmac.New(sha1.New, key)
+	mac := hmac.New(algo, key)
 	mac.Write(msg[:])
 	sum := mac.Sum(nil)
-	// Wipe HMAC sum after extracting code
 	defer secureWipe(sum)
 
 	offset := sum[len(sum)-1] & 0x0F
@@ -65,16 +70,16 @@ func secureWipe(b []byte) {
 // parseTOTPSecret supports multiple formats:
 // - "<digits> <base32>"
 // - raw base32 (std/hex, with or without padding)
-// - otpauth:// URI
-func parseTOTPSecret(s string) ([]byte, int, error) {
+// - otpauth:// URI (digits, period, algorithm)
+func parseTOTPSecret(s string) ([]byte, int, int, func() hash.Hash, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return nil, 0, fmt.Errorf("empty secret")
+		return nil, 0, 0, nil, fmt.Errorf("empty secret")
 	}
 	if strings.HasPrefix(strings.ToLower(s), "otpauth://") {
 		u, err := url.Parse(s)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, nil, err
 		}
 		q := u.Query()
 		sec := q.Get("secret")
@@ -84,8 +89,18 @@ func parseTOTPSecret(s string) ([]byte, int, error) {
 				digits = v
 			}
 		}
+		period := 30
+		if p := q.Get("period"); p != "" {
+			if v, err := strconv.Atoi(p); err == nil && v > 0 {
+				period = v
+			}
+		}
+		algo, err := hashFromAlgorithm(q.Get("algorithm"))
+		if err != nil {
+			return nil, 0, 0, nil, err
+		}
 		k, err := decodeBase32Flexible(sec)
-		return k, digits, err
+		return k, digits, period, algo, err
 	}
 	parts := strings.Fields(s)
 	digits := 6
@@ -97,9 +112,22 @@ func parseTOTPSecret(s string) ([]byte, int, error) {
 	}
 	k, err := decodeBase32Flexible(s)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, nil, err
 	}
-	return k, digits, nil
+	return k, digits, 30, sha1.New, nil
+}
+
+func hashFromAlgorithm(name string) (func() hash.Hash, error) {
+	switch strings.ToUpper(strings.TrimSpace(name)) {
+	case "", "SHA1":
+		return sha1.New, nil
+	case "SHA256":
+		return sha256.New, nil
+	case "SHA512":
+		return sha512.New, nil
+	default:
+		return nil, fmt.Errorf("unsupported TOTP algorithm %q", name)
+	}
 }
 
 func decodeBase32Flexible(sec string) ([]byte, error) {
@@ -107,21 +135,24 @@ func decodeBase32Flexible(sec string) ([]byte, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("empty secret")
 	}
+	upper := strings.ToUpper(raw)
+	noPad := strings.TrimRight(upper, "=")
+
 	// Try standard base32 with padding
-	if k, err := base32.StdEncoding.DecodeString(strings.ToUpper(raw)); err == nil && len(k) > 0 {
+	if k, err := base32.StdEncoding.DecodeString(upper); err == nil && len(k) > 0 {
 		return k, nil
 	}
 	// Try standard base32 without padding
-	np := strings.TrimRight(strings.ToUpper(raw), "=")
-	if k, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(np); err == nil && len(k) > 0 {
+	if k, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(noPad); err == nil && len(k) > 0 {
 		return k, nil
 	}
-	// Try base32hex
-	if k, err := base32.HexEncoding.DecodeString(strings.ToUpper(raw)); err == nil && len(k) > 0 {
+	// Try base32hex with padding
+	if k, err := base32.HexEncoding.DecodeString(upper); err == nil && len(k) > 0 {
 		return k, nil
 	}
-	if k, err := base32.HexEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(np)); err == nil && len(k) > 0 {
+	// Try base32hex without padding
+	if k, err := base32.HexEncoding.WithPadding(base32.NoPadding).DecodeString(noPad); err == nil && len(k) > 0 {
 		return k, nil
 	}
-	return nil, fmt.Errorf("unsupported TOTP secret format")
+	return nil, fmt.Errorf("invalid base32 secret")
 }

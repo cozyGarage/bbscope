@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/validate"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 
 	"github.com/spf13/viper"
@@ -149,6 +150,7 @@ func initConfig() {
 	viper.SetDefault("ai.endpoint", "")
 	viper.SetDefault("ai.max_batch", 25)
 	viper.SetDefault("ai.max_concurrency", 3)
+	viper.SetDefault("ai.insecure_skip_verify", false)
 	viper.SetDefault("db_url", "")
 
 	// Init log library
@@ -165,6 +167,9 @@ func GetDBConnectionString() (string, error) {
 	url := viper.GetString("db_url")
 	if url == "" {
 		return "", fmt.Errorf("db_url not set in config. Please set it in ~/.bbscope.yaml")
+	}
+	if _, err := validate.DatabaseURL(url); err != nil {
+		return "", fmt.Errorf("invalid db_url: %w", err)
 	}
 	return url, nil
 }

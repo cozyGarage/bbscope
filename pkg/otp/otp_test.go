@@ -131,3 +131,44 @@ func TestGenerateTOTP_HugeDigitsNoPanic(t *testing.T) {
 		t.Fatalf("expected clamped 8-digit code, got %q", code)
 	}
 }
+
+func TestDecodeBase32Flexible(t *testing.T) {
+	// "Hello!" in each base32 variant/padding combination.
+	tests := []struct {
+		name string
+		sec  string
+	}{
+		{"std padded", "JBSWY3DPEHPK3PXP"}, // no padding needed for 12 bytes, kept for parity
+		{"std no padding, trailing =", "JBSWY3DPEE======"},
+		{"hex padded", "9128OR3F45FAR3FE"},
+		{"hex no padding, trailing =", "9128OR3F44======"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := decodeBase32Flexible(tt.sec); err != nil {
+				t.Fatalf("decodeBase32Flexible(%q) failed: %v", tt.sec, err)
+			}
+		})
+	}
+}
+
+func TestGenerateTOTP_PeriodAndAlgorithm(t *testing.T) {
+	uri := "otpauth://totp/Test:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Test&period=60&algorithm=SHA256&digits=6"
+	fixed := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	code, err := GenerateTOTP(uri, fixed)
+	if err != nil {
+		t.Fatalf("GenerateTOTP: %v", err)
+	}
+	if len(code) != 6 {
+		t.Fatalf("expected 6-digit code, got %q", code)
+	}
+	// Different period should usually yield a different code than period=30.
+	uri30 := "otpauth://totp/Test:user@example.com?secret=JBSWY3DPEHPK3PXP&period=30&algorithm=SHA1&digits=6"
+	code30, err := GenerateTOTP(uri30, fixed)
+	if err != nil {
+		t.Fatalf("GenerateTOTP period=30: %v", err)
+	}
+	if code == code30 {
+		t.Logf("period/algorithm variants produced same code at this timestamp (possible but uncommon): %s", code)
+	}
+}

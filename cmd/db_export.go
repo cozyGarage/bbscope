@@ -51,9 +51,10 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	// Fetch all entries
 	opts := storage.ListOptions{
-		Platform:       platform,
-		IncludeOOS:     true, // Export everything by default
-		IncludeIgnored: false,
+		Platform:        platform,
+		IncludeOOS:      true, // Export everything by default
+		IncludeIgnored:  false,
+		IncludeDisabled: true, // Include soft-disabled programs in backups
 	}
 
 	ctx := context.Background()

@@ -231,6 +231,11 @@ func (m Model) View() string {
 		content = m.renderHelp()
 	}
 
+	if m.err != nil {
+		errLine := m.styles.Subtitle.Render("Error: " + m.err.Error())
+		content = lipgloss.JoinVertical(lipgloss.Left, content, "", errLine)
+	}
+
 	// Add footer
 	footer := m.renderFooter()
 

@@ -78,6 +78,21 @@ func TestListProgramHandles(t *testing.T) {
 	}
 }
 
+func TestListProgramHandles_NonOKStatus(t *testing.T) {
+	// Use 400 (not retried by go-retryablehttp) so the test stays fast.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":"boom"}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := NewPoller("tok")
+	if _, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
+		t.Fatal("expected error on non-2xx list response")
+	}
+}
+
 func TestFetchProgramScope(t *testing.T) {
 	body := readTestdata(t, "program_scope.json")
 

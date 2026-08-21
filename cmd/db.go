@@ -17,6 +17,7 @@ import (
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
+	"github.com/cozyGarage/bbscope/v2/pkg/validate"
 )
 
 // dbCmd represents the db command
@@ -129,6 +130,7 @@ var printCmd = &cobra.Command{
 		sinceStr, _ := cmd.Flags().GetString("since")
 		format, _ := cmd.Flags().GetString("format")
 		includeIgnored, _ := cmd.Flags().GetBool("include-ignored")
+		includeDisabled, _ := cmd.Flags().GetBool("include-disabled")
 		dbURL, err := GetDBConnectionString()
 		if err != nil {
 			return err
@@ -150,11 +152,12 @@ var printCmd = &cobra.Command{
 		}
 
 		entries, err := db.ListEntries(context.Background(), storage.ListOptions{
-			Platform:       platform,
-			ProgramFilter:  program,
-			Since:          since,
-			IncludeOOS:     oos,
-			IncludeIgnored: includeIgnored,
+			Platform:        platform,
+			ProgramFilter:   program,
+			Since:           since,
+			IncludeOOS:      oos,
+			IncludeIgnored:  includeIgnored,
+			IncludeDisabled: includeDisabled,
 		})
 		if err != nil {
 			return err
@@ -357,6 +360,11 @@ var addCmd = &cobra.Command{
 		if target == "" {
 			return errors.New("target flag is required")
 		}
+		if programURL != "" && programURL != "custom" {
+			if err := validate.URL(programURL); err != nil {
+				return fmt.Errorf("invalid --program-url: %w", err)
+			}
+		}
 
 		db, err := storage.Open(dbURL)
 		if err != nil {
@@ -367,21 +375,43 @@ var addCmd = &cobra.Command{
 		targets := strings.Split(target, ",")
 		for _, t := range targets {
 			t = strings.TrimSpace(t)
-			if t != "" {
-				created, err := db.AddCustomTarget(context.Background(), t, category, programURL)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error adding target %s: %v\n", t, err)
-				} else {
-					if created {
-						fmt.Printf("Successfully added target: %s\n", t)
-					} else {
-						fmt.Printf("Target already exists, refreshed timestamp: %s\n", t)
-					}
-				}
+			if t == "" {
+				continue
+			}
+			if err := validateCustomTarget(category, t); err != nil {
+				fmt.Fprintf(os.Stderr, "Skipping invalid target %s: %v\n", t, err)
+				continue
+			}
+			created, err := db.AddCustomTarget(context.Background(), t, category, programURL)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error adding target %s: %v\n", t, err)
+			} else if created {
+				fmt.Printf("Successfully added target: %s\n", t)
+			} else {
+				fmt.Printf("Target already exists, refreshed timestamp: %s\n", t)
 			}
 		}
 		return nil
 	},
+}
+
+func validateCustomTarget(category, target string) error {
+	switch scope.NormalizeCategory(category) {
+	case "wildcard":
+		return validate.Wildcard(target)
+	case "cidr":
+		if err := validate.CIDR(target); err == nil {
+			return nil
+		}
+		return validate.IPv4(target)
+	case "url":
+		if err := validate.URL(target); err == nil {
+			return nil
+		}
+		return validate.Domain(target)
+	default:
+		return validate.NotEmpty("target", target)
+	}
 }
 
 func init() {
@@ -404,4 +434,5 @@ func init() {
 	printCmd.Flags().StringP("delimiter", "d", " ", "Delimiter character to use for txt output format")
 	printCmd.Flags().StringP("output", "o", "tu", "Output flags. Supported: t (target), d (target description), c (category), u (program URL). Can be combined. Example: -o tdu")
 	printCmd.Flags().Bool("include-ignored", false, "Include programs that are marked as ignored")
+	printCmd.Flags().Bool("include-disabled", false, "Include programs that are soft-disabled")
 }
