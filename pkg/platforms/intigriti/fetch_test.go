@@ -95,3 +95,18 @@ func TestListProgramHandles_Unauthorized(t *testing.T) {
 		t.Fatal("expected error on 401, got nil")
 	}
 }
+
+func TestListProgramHandles_NonOKStatus(t *testing.T) {
+	// Use 400 (not retried by go-retryablehttp) so the test stays fast.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, "bad request")
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := newPoller(t)
+	if _, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
+		t.Fatal("expected error on 400, got nil")
+	}
+}

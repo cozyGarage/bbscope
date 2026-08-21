@@ -66,3 +66,37 @@ func TestFormatDiscordLinkAndCode(t *testing.T) {
 		t.Fatal("expected backtick escape")
 	}
 }
+
+func TestFormatDiscordMessageEscapesTypeAndCategory(t *testing.T) {
+	msg := formatDiscordMessage(ChangeEvent{
+		Type:     "added *bold* `code` |pipe",
+		Category: "url_italic_ <mention>",
+		Target:   "example.com",
+		Platform: "h1",
+	}, &DiscordConfig{})
+	for _, f := range msg.Embeds[0].Fields {
+		if f.Name != "Type" && f.Name != "Category" {
+			continue
+		}
+		if strings.ContainsAny(f.Value, "*_~`|") && !strings.Contains(f.Value, "\\") {
+			t.Fatalf("expected markdown control chars to be escaped in %s: %q", f.Name, f.Value)
+		}
+	}
+}
+
+func TestFormatSlackMessageEscapesFields(t *testing.T) {
+	msg := formatSlackMessage(ChangeEvent{
+		Type:     "added",
+		Category: "url",
+		Target:   "<!everyone> a<b>",
+		Platform: "h1",
+	}, &SlackConfig{})
+	for _, f := range msg.Attachments[0].Fields {
+		if f.Title != "Target" {
+			continue
+		}
+		if strings.Contains(f.Value, "<!everyone>") {
+			t.Fatalf("expected Slack special-mention syntax to be escaped, got: %q", f.Value)
+		}
+	}
+}

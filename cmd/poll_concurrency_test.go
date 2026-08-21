@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,7 +25,7 @@ func TestProcessProgramsConcurrently_AllProcessed(t *testing.T) {
 	p := platforms.NewMockPoller("fake")
 	p.Handles = []string{"a", "b", "c", "d", "e"}
 	handles := p.Handles
-	urls, err := processProgramsConcurrently(context.Background(), newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 3, nil)
+	urls, err := processProgramsConcurrently(context.Background(), newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 3, nil, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestProcessProgramsConcurrently_ErrorIsolation(t *testing.T) {
 	p := platforms.NewMockPoller("fake")
 	p.FailOn = map[string]bool{"b": true}
 	handles := []string{"a", "b", "c"}
-	urls, err := processProgramsConcurrently(context.Background(), newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 2, nil)
+	urls, err := processProgramsConcurrently(context.Background(), newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 2, nil, time.Time{})
 	if err == nil {
 		t.Fatal("expected an error to be surfaced when one handle fails")
 	}
@@ -55,7 +56,7 @@ func TestProcessProgramsConcurrently_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before any work starts
 
-	urls, err := processProgramsConcurrently(ctx, newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 2, nil)
+	urls, err := processProgramsConcurrently(ctx, newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 2, nil, time.Time{})
 	if len(urls) != 0 {
 		t.Fatalf("workers should bail out on a canceled context, but processed %d (%v)", len(urls), urls)
 	}
@@ -94,7 +95,7 @@ func TestProcessProgramsConcurrently_CancelMidFlightReturnsError(t *testing.T) {
 	handles := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
 
 	// Concurrency 1 so the cancellation lands before the remaining handles run.
-	urls, err := processProgramsConcurrently(ctx, newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 1, nil)
+	urls, err := processProgramsConcurrently(ctx, newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 1, nil, time.Time{})
 	if err == nil {
 		t.Fatal("a cancelled poll must surface an error so the caller skips platform sync")
 	}

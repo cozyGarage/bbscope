@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
@@ -102,9 +104,16 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 	argIdx := 1
 
 	if opts.Platform != "" && opts.Platform != "all" {
-		where += fmt.Sprintf(" AND p.platform = $%d", argIdx)
-		args = append(args, opts.Platform)
-		argIdx++
+		platformList := splitPlatformList(opts.Platform)
+		if len(platformList) == 1 {
+			where += fmt.Sprintf(" AND p.platform = $%d", argIdx)
+			args = append(args, platformList[0])
+			argIdx++
+		} else if len(platformList) > 1 {
+			where += fmt.Sprintf(" AND p.platform = ANY($%d)", argIdx)
+			args = append(args, pgtype.FlatArray[string](platformList))
+			argIdx++
+		}
 	}
 	if opts.ProgramFilter != "" {
 		filter := fmt.Sprintf("%%%s%%", opts.ProgramFilter)

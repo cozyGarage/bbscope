@@ -144,9 +144,13 @@ func TestPlatform(t *testing.T) {
 		wantErr  bool
 	}{
 		{"hackerone", "hackerone", false},
+		{"h1 alias", "h1", false},
 		{"bugcrowd", "bugcrowd", false},
+		{"bc alias", "bc", false},
 		{"intigriti", "intigriti", false},
+		{"it alias", "it", false},
 		{"yeswehack", "yeswehack", false},
+		{"ywh alias", "ywh", false},
 		{"immunefi", "immunefi", false},
 		{"uppercase", "HACKERONE", false},
 		{"mixed case", "HackerOne", false},
@@ -192,6 +196,12 @@ func TestDatabaseURL(t *testing.T) {
 			name:    "empty",
 			url:     "",
 			wantErr: true,
+		},
+		{
+			name:          "keyword/value DSN",
+			url:           "host=localhost port=5432 user=bbscope password=secret dbname=bbscope",
+			wantErr:       false,
+			wantSanitized: "host=localhost port=5432 user=bbscope password=secret dbname=bbscope",
 		},
 	}
 

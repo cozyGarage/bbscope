@@ -23,29 +23,36 @@ func loadStatsCmd(db *storage.DB) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		// Get program count
+		// Get program count (active only)
 		programs, err := db.ListPrograms(ctx)
 		if err != nil {
 			return errMsg(fmt.Errorf("failed to load programs: %w", err))
 		}
+		activePrograms := 0
+		for _, p := range programs {
+			if !p.Disabled && !p.IsIgnored {
+				activePrograms++
+			}
+		}
 
-		// Get target count
+		// Get target count (active programs only via ListOptions defaults)
 		entries, err := db.ListEntries(ctx, storage.ListOptions{})
 		if err != nil {
 			return errMsg(fmt.Errorf("failed to load entries: %w", err))
 		}
 
-		// Get recent changes count
-		changes, err := db.ListRecentChanges(ctx, 1000)
+		// Get true 24h change count
+		now := time.Now()
+		changes, err := db.GetChangesBetween(ctx, now.Add(-24*time.Hour), now, "")
 		if err != nil {
 			return errMsg(fmt.Errorf("failed to load changes: %w", err))
 		}
 
 		return statsMsg{
-			ProgramCount: len(programs),
+			ProgramCount: activePrograms,
 			TargetCount:  len(entries),
 			ChangesCount: len(changes),
-			LastUpdated:  time.Now(),
+			LastUpdated:  now,
 		}
 	}
 }

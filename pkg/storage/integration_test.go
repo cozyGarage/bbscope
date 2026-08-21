@@ -236,6 +236,32 @@ func TestIntegration_SyncPlatformPrograms(t *testing.T) {
 	if retainedTargets != 1 {
 		t.Fatalf("soft-disabled program should retain 1 target, got %d", retainedTargets)
 	}
+
+	// Soft-disable retains targets, but default list excludes disabled programs.
+	activeOnly, err := db.ListEntries(ctx, ListOptions{Platform: platform, IncludeOOS: true, IncludeIgnored: true})
+	if err != nil {
+		t.Fatalf("ListEntries: %v", err)
+	}
+	for _, e := range activeOnly {
+		if e.ProgramURL == progB || e.ProgramURL == NormalizeProgramURL(progB) {
+			t.Fatalf("default ListEntries should exclude soft-disabled program %s", progB)
+		}
+	}
+
+	listedDisabled, err := db.ListEntries(ctx, ListOptions{Platform: platform, IncludeOOS: true, IncludeIgnored: true, IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ListEntries(IncludeDisabled): %v", err)
+	}
+	foundB := false
+	for _, e := range listedDisabled {
+		if e.ProgramURL == progB || e.ProgramURL == NormalizeProgramURL(progB) {
+			foundB = true
+			break
+		}
+	}
+	if !foundB {
+		t.Fatalf("expected retained targets for soft-disabled program %s with IncludeDisabled, got %#v", progB, listedDisabled)
+	}
 }
 
 func TestIntegration_GetChangesBetween(t *testing.T) {

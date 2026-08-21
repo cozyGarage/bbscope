@@ -129,6 +129,8 @@ func TestVariantAllowed(t *testing.T) {
 		{"https://*.example.com/**", "example.com", true},
 		{"example.com", "evil.com", false},
 		{"example.com", "totally-unrelated.net", false},
+		{"example.com", "com", false},
+		{"example.co.uk", "co.uk", false},
 	}
 	for _, tc := range tests {
 		if got := variantAllowed(tc.original, tc.variant); got != tc.want {

@@ -33,8 +33,9 @@ func runDevCmd(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	entries, err := db.ListEntries(context.Background(), storage.ListOptions{
-		IncludeOOS:     true,
-		IncludeIgnored: true,
+		IncludeOOS:      true,
+		IncludeIgnored:  true,
+		IncludeDisabled: true,
 	})
 	if err != nil {
 		return err

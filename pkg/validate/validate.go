@@ -110,10 +110,18 @@ func Handle(handle string) error {
 	return nil
 }
 
-// Platform validates a platform name
+// Platform validates a platform name (full names or short CLI aliases).
 func Platform(platform string) error {
 	platform = strings.TrimSpace(strings.ToLower(platform))
-	validPlatforms := []string{"hackerone", "bugcrowd", "intigriti", "yeswehack", "immunefi"}
+	validPlatforms := []string{
+		"hackerone", "h1",
+		"bugcrowd", "bc",
+		"intigriti", "it",
+		"yeswehack", "ywh",
+		"immunefi",
+		"custom",
+		"dev",
+	}
 	for _, valid := range validPlatforms {
 		if platform == valid {
 			return nil
@@ -126,11 +134,18 @@ func Platform(platform string) error {
 	}
 }
 
-// DatabaseURL validates a PostgreSQL connection URL and returns a sanitized version
+// DatabaseURL validates a PostgreSQL connection string and returns a sanitized
+// version. Both URL form ("postgres://user:pass@host/db") and libpq
+// keyword/value DSN form ("host=... password=...") are accepted, matching
+// what storage.Open (via sql.Open("pgx", ...)) actually connects with; DSNs
+// are passed through as-is since url.Parse cannot validate their structure.
 func DatabaseURL(connURL string) (sanitized string, err error) {
 	connURL = strings.TrimSpace(connURL)
 	if connURL == "" {
 		return "", &ValidationError{Field: "database_url", Value: "", Message: "cannot be empty"}
+	}
+	if isKeywordValueDSN(connURL) {
+		return connURL, nil
 	}
 	parsed, err := url.Parse(connURL)
 	if err != nil {
@@ -150,6 +165,15 @@ func DatabaseURL(connURL string) (sanitized string, err error) {
 		sanitized = fmt.Sprintf("%s://%s%s", parsed.Scheme, parsed.Host, parsed.Path)
 	}
 	return sanitized, nil
+}
+
+// isKeywordValueDSN reports whether connStr looks like a libpq keyword/value
+// DSN rather than a URL. Anything carrying a scheme is treated as a URL.
+func isKeywordValueDSN(connStr string) bool {
+	if strings.Contains(connStr, "://") {
+		return false
+	}
+	return strings.Contains(connStr, "=")
 }
 
 // NotEmpty validates that a string is not empty

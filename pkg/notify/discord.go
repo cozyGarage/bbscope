@@ -121,8 +121,8 @@ func formatDiscordMessage(event ChangeEvent, cfg *DiscordConfig) discordMessage 
 		Description: description,
 		Color:       color,
 		Fields: []discordField{
-			{Name: "Type", Value: event.Type, Inline: true},
-			{Name: "Category", Value: event.Category, Inline: true},
+			{Name: "Type", Value: escapeDiscordMarkdown(event.Type), Inline: true},
+			{Name: "Category", Value: escapeDiscordMarkdown(event.Category), Inline: true},
 			{Name: "Program", Value: formatDiscordLink(event.ProgramHandle, event.ProgramURL), Inline: false},
 			{Name: "Status", Value: fmt.Sprintf("%s • %s", scopeStatus, bountyStatus), Inline: false},
 		},

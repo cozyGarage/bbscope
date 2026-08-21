@@ -280,6 +280,22 @@ func shouldAbortPartialSync(activeCount, removeCount int) bool {
 	return float64(removeCount) > float64(activeCount)*syncPartialDisableMaxRatio
 }
 
+// splitPlatformList parses a comma-separated --platform filter (e.g. "h1,bc")
+// into its lowercased, trimmed components; "all" and empty entries are dropped
+// since they mean "no filter".
+func splitPlatformList(input string) []string {
+	parts := strings.Split(input, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p == "" || p == "all" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

@@ -120,9 +120,9 @@ func formatSlackMessage(event ChangeEvent, cfg *SlackConfig) slackMessage {
 		Color: color,
 		Title: title,
 		Fields: []slackField{
-			{Title: "Type", Value: event.Type, Short: true},
-			{Title: "Category", Value: event.Category, Short: true},
-			{Title: "Target", Value: event.Target, Short: false},
+			{Title: "Type", Value: escapeSlackText(event.Type), Short: true},
+			{Title: "Category", Value: escapeSlackText(event.Category), Short: true},
+			{Title: "Target", Value: escapeSlackText(event.Target), Short: false},
 			{Title: "Program", Value: formatSlackLink(event.ProgramURL, event.ProgramHandle), Short: false},
 			{Title: "Status", Value: fmt.Sprintf("%s • %s", scopeStatus, bountyStatus), Short: false},
 		},
