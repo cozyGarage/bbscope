@@ -8,7 +8,7 @@ The [Security Audit](SECURITY_AUDIT.md) is a historical assessment. **This file 
 
 A change is ready to merge when:
 
-1. CI is green: test (with Postgres), lint, gosec, `go mod tidy`, cross-build. `govulncheck` is advisory.
+1. CI is green: test (with Postgres), lint, gosec, `go mod tidy`, cross-build, secret scan (Gitleaks), fuzz. `govulncheck` and container Trivy are advisory.
 2. The PR template checklists for **touched subsystems** are filled in (see below).
 3. New behavior has tests. Platform pollers use `httptest`, not live network.
 4. No Critical/High finding is introduced. Medium findings need an explicit “accepted” note or a follow-up.
@@ -111,6 +111,7 @@ Route review by path, not GitHub handles:
 - Markup injection in a newly added notifier field.
 - Flag vs keychain precedence on a new command.
 - Stale comments that claim `InsecureSkipVerify` is on whenever a proxy is set.
+- Secrets in git *history* (Gitleaks in CI is `--no-git` working-tree only).
 
 ## gosec excludes
 
@@ -145,7 +146,7 @@ Review of `main` against this playbook, with high/medium items fixed in the acco
 | F3 | Low | Open | Duplicated AI-variant reassignment SQL in `reassignProgramTargets` / `mergeDuplicateTargets` — DRY candidate, not a correctness bug |
 | F4 | Low | Open | TUI polling is simulated; search is a placeholder (`docs/TUI_ARCHITECTURE.md`) |
 | F5 | Low | Open | No live-network platform contract tests (all pollers are httptest). Refresh fixtures when HTML/RSC shapes change |
-| F6 | Low | Open | No container image scan or secret scan in CI (`govulncheck` is non-blocking) |
+| F6 | Low | Fixed | Gitleaks scans the working tree on every CI run (blocking). Trivy scans the Docker image for fixable CRITICAL issues (advisory; Alpine point-release lag). `govulncheck` stays advisory. |
 | F7 | Low | Accepted | `config migrate` leaves plaintext YAML; documented above |
 | F8 | Low | Accepted | Two-program platforms: a single genuine removal is allowed (`activeCount < 3` skips the 50% ratio; full wipe still aborted) |
 

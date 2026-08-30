@@ -944,3 +944,46 @@ func TestIntegration_SyncRefusesSingleProgramWipe(t *testing.T) {
 		t.Fatalf("lone program must remain active, count=%d err=%v", count, err)
 	}
 }
+
+// TestIntegration_ListEntriesExpandsPlatformAliases stores a program as `bc`
+// (the poller.Name() spelling) and checks that `--platform bugcrowd` still
+// finds it. Cleanup is by program URL so we never DELETE FROM programs WHERE
+// platform = 'bc' and wipe someone else's Bugcrowd rows in a shared database.
+func TestIntegration_ListEntriesExpandsPlatformAliases(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
+	programURL := "https://bugcrowd.com/bbscope-alias-" + suffix
+	handle := "bbscope-alias-" + suffix
+
+	t.Cleanup(func() {
+		_, _ = db.sql.Exec(`DELETE FROM targets_ai_enhanced WHERE target_id IN (
+			SELECT tr.id FROM targets_raw tr JOIN programs p ON tr.program_id = p.id WHERE p.url = $1)`, programURL)
+		_, _ = db.sql.Exec(`DELETE FROM targets_raw WHERE program_id IN (SELECT id FROM programs WHERE url = $1)`, programURL)
+		_, _ = db.sql.Exec(`DELETE FROM scope_changes WHERE program_url = $1`, programURL)
+		_, _ = db.sql.Exec(`DELETE FROM programs WHERE url = $1`, programURL)
+	})
+
+	entries := mustBuildEntries(t, programURL, "bc", handle, []TargetItem{
+		{URI: "alias-" + suffix + ".example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, "bc", handle, entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	listed, err := db.ListEntries(ctx, ListOptions{Platform: "bugcrowd", ProgramFilter: handle})
+	if err != nil {
+		t.Fatalf("ListEntries(bugcrowd): %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("ListEntries(platform=bugcrowd, handle=%q) = %d, want 1", handle, len(listed))
+	}
+
+	wrong, err := db.ListEntries(ctx, ListOptions{Platform: "h1", ProgramFilter: handle})
+	if err != nil {
+		t.Fatalf("ListEntries(h1): %v", err)
+	}
+	if len(wrong) != 0 {
+		t.Fatalf("h1 filter should miss bc rows, got %d", len(wrong))
+	}
+}

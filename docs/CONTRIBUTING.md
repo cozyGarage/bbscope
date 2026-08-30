@@ -426,7 +426,7 @@ For significant changes, add an entry to CHANGELOG.md (if exists) or note in PR 
 ### Pull Request Checklist
 
 - [ ] Code follows project style guidelines
-- [ ] Tests pass locally (`go test ./...`)
+- [ ] Tests pass locally (`go test ./...`); `make test-integration` if storage/cmd DB paths changed; `make test-fuzz` for parser changes
 - [ ] New functionality includes tests
 - [ ] Documentation updated (if applicable)
 - [ ] Commit messages are clear
@@ -453,7 +453,7 @@ Fixes #123
 
 ### Review Process
 
-1. CI must be green (test, lint, gosec, tidy, build). `govulncheck` is advisory.
+1. CI must be green (test, lint, gosec, tidy, build, secret scan, fuzz). `govulncheck` and image Trivy are advisory.
 2. A maintainer reviews using the [code review playbook](CODE_REVIEW.md): severity, merge bar, and the checklists for subsystems the PR touched.
 3. Address requested changes. Do not resolve a Critical/High finding with “will fix later” unless it is an accepted risk already listed in the playbook.
 4. Security vulnerabilities go through [SECURITY.md](../SECURITY.md) (private reporting), not a public PR discussion of exploit details.

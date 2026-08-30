@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -13,6 +18,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # The pkg/storage integration tests are gated on TEST_DB_URL and skip when it
     # is unset. Without this service they never ran in CI, so the package that
@@ -35,6 +41,7 @@ jobs:
 
     env:
       TEST_DB_URL: postgres://bbscope:bbscope@127.0.0.1:5432/bbscope?sslmode=disable
+      GOFLAGS: -mod=readonly
 
     steps:
       - name: Checkout code
@@ -50,9 +57,19 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ ! -f coverage.out ]; then
+            echo "::error::coverage.out was not produced"
+            exit 1
+          fi
+          go tool cover -func=coverage.out | tail -n 5
 
       - name: Upload coverage
+        if: always()
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.out
@@ -61,6 +78,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOFLAGS: -mod=readonly
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -81,7 +101,10 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [test, lint]
+    env:
+      GOFLAGS: -mod=readonly
     strategy:
       matrix:
         goos: [linux, darwin, windows]
@@ -116,6 +139,7 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -142,6 +166,7 @@ jobs:
   tidy:
     name: Tidy
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -161,6 +186,7 @@ jobs:
   vuln:
     name: Vulnerability Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # Advisory: govulncheck also reports standard-library CVEs fixed only in the
     # very latest Go patch releases, which are outside this repo's control and
     # would otherwise block unrelated PRs. Keep it visible but non-blocking; act
@@ -177,14 +203,15 @@ jobs:
           cache: true
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: Run govulncheck
-        run: govulncheck ./...
+        run: govulncheck -mode=source ./...
 
   release-check:
     name: Release Config Check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -201,6 +228,46 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           install-only: true
+          version: "~> v2"
 
       - name: Validate GoReleaser configuration
         run: goreleaser check
+
+  secrets:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Official action requires a commercial license for private orgs; the
+      # CLI image is MIT and scans the working tree (not git history).
+      - name: Run Gitleaks
+        run: |
+          docker run --rm \
+            -v "$PWD:/src:ro" \
+            zricethezav/gitleaks:v8.24.0 \
+            detect --source=/src --no-git --redact --config=/src/.gitleaks.toml --verbose
+
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOFLAGS: -mod=readonly
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Fuzz parsers
+        run: |
+          go test -fuzz=FuzzNormalizeTarget -fuzztime=15s ./pkg/storage/
+          go test -fuzz=FuzzCanonicalName -fuzztime=15s ./pkg/platforms/
+          go test -fuzz=FuzzWebhookURLAllowed -fuzztime=15s ./pkg/notify/

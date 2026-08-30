@@ -226,7 +226,14 @@ open coverage.html
 # Coverage by package
 go test -coverprofile=coverage.out -covermode=atomic ./...
 go tool cover -func=coverage.out
+
+# Makefile shortcuts (same flags as CI)
+make test
+make test-integration   # requires TEST_DB_URL
+make test-fuzz          # 15s each: NormalizeTarget, CanonicalName, webhookURLAllowed
 ```
+
+CI (`.github/workflows/ci.yml`) runs the unit suite with Postgres (`TEST_DB_URL`), golangci-lint, gosec, `go mod tidy`, cross-build, Gitleaks, and a short fuzz job. `govulncheck` and Docker Trivy are advisory. Docker builds (`.github/workflows/docker.yml`) load the image locally, scan it, then push to GHCR on non-PR events.
 
 ### Writing Tests
 
