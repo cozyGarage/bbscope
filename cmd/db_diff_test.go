@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/csv"
+	"encoding/json"
 	"io"
 	"os"
 	"strings"
@@ -40,48 +42,98 @@ func sampleChanges() []storage.Change {
 	}
 }
 
-func TestCSVEscape(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"plain", "plain"},
-		{"has,comma", `"has,comma"`},
-		{`has"quote`, `"has""quote"`},
-		{"", ""},
-	}
-	for _, tc := range tests {
-		if got := csvEscape(tc.in); got != tc.want {
-			t.Errorf("csvEscape(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
+// TestOutputDiffCSV parses the output rather than string-matching it, so the
+// test confirms the CSV is well formed rather than that it looks a certain way.
 func TestOutputDiffCSV(t *testing.T) {
 	out := captureStdout(t, func() { outputDiffCSV(sampleChanges()) })
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if lines[0] != "type,platform,target,category,program,time" {
-		t.Fatalf("unexpected CSV header: %q", lines[0])
+
+	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+	if err != nil {
+		t.Fatalf("output is not valid CSV: %v\n%s", err, out)
 	}
-	if len(lines) != 3 {
-		t.Fatalf("expected header + 2 rows, got %d lines: %q", len(lines), out)
+	if len(records) != 3 {
+		t.Fatalf("expected header + 2 rows, got %d records: %q", len(records), out)
 	}
-	if !strings.Contains(lines[1], "added,h1,a.example.com,url,https://h1/p,") {
-		t.Errorf("unexpected first row: %q", lines[1])
+	if got := strings.Join(records[0], ","); got != "type,platform,target,category,program,time" {
+		t.Fatalf("unexpected CSV header: %q", got)
 	}
-	// The comma in the target must be CSV-quoted.
-	if !strings.Contains(lines[2], `"b,comma.example.com"`) {
-		t.Errorf("comma target not quoted: %q", lines[2])
+	if records[1][0] != "added" || records[1][2] != "a.example.com" {
+		t.Errorf("unexpected first row: %q", records[1])
+	}
+	// The comma in the target must survive a round trip through the parser.
+	if records[2][2] != "b,comma.example.com" {
+		t.Errorf("comma target did not round-trip: %q", records[2][2])
 	}
 }
 
+// TestOutputDiffCSVEscapesHostileFields covers characters that broke the
+// previous hand-rolled escaper.
+func TestOutputDiffCSVEscapesHostileFields(t *testing.T) {
+	changes := []storage.Change{{
+		OccurredAt:       time.Unix(0, 0).UTC(),
+		ChangeType:       "added",
+		Platform:         "h1",
+		TargetNormalized: "line\nbreak.example.com",
+		Category:         "url",
+		ProgramURL:       `quote"and,comma`,
+	}}
+
+	out := captureStdout(t, func() { outputDiffCSV(changes) })
+	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+	if err != nil {
+		t.Fatalf("output is not valid CSV: %v\n%s", err, out)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected header + 1 row, got %d", len(records))
+	}
+	if records[1][2] != "line\nbreak.example.com" {
+		t.Errorf("newline in target did not round-trip: %q", records[1][2])
+	}
+	if records[1][4] != `quote"and,comma` {
+		t.Errorf("quote/comma in program did not round-trip: %q", records[1][4])
+	}
+}
+
+// TestOutputDiffJSON checks the output parses, which the previous Printf-built
+// JSON did not guarantee.
 func TestOutputDiffJSON(t *testing.T) {
 	out := captureStdout(t, func() { outputDiffJSON(sampleChanges()) })
-	if !strings.HasPrefix(strings.TrimSpace(out), "[") || !strings.HasSuffix(strings.TrimSpace(out), "]") {
-		t.Fatalf("JSON output not bracketed: %q", out)
+
+	var got []diffEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `"type": "added"`) || !strings.Contains(out, `"type": "removed"`) {
-		t.Errorf("expected both change types in JSON, got %q", out)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(got))
+	}
+	if got[0].Type != "added" || got[1].Type != "removed" {
+		t.Errorf("unexpected change types: %+v", got)
+	}
+	if got[0].Target != "a.example.com" {
+		t.Errorf("unexpected target: %q", got[0].Target)
+	}
+}
+
+// TestOutputDiffJSONEscapesHostileFields pins the bug the hand-rolled encoder
+// had: a quote in any field produced invalid JSON.
+func TestOutputDiffJSONEscapesHostileFields(t *testing.T) {
+	changes := []storage.Change{{
+		OccurredAt:       time.Unix(0, 0).UTC(),
+		ChangeType:       "added",
+		Platform:         "h1",
+		TargetNormalized: `has"quote`,
+		Category:         "url",
+		ProgramURL:       `back\slash`,
+	}}
+
+	out := captureStdout(t, func() { outputDiffJSON(changes) })
+
+	var got []diffEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("a quote in a field produced invalid JSON: %v\n%s", err, out)
+	}
+	if got[0].Target != `has"quote` || got[0].Program != `back\slash` {
+		t.Errorf("fields did not round-trip: %+v", got[0])
 	}
 }
 
