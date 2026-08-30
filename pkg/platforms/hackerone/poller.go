@@ -203,10 +203,6 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 			}
 		}
 
-		if opts.BountyOnly && len(pData.InScope) == 0 {
-			pData.OutOfScope = []scope.ScopeElement{}
-		}
-
 		nextPageURL := gjson.Get(res.BodyString, "links.next").Str
 		if nextPageURL == "" {
 			break
@@ -216,6 +212,9 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 			return scope.ProgramData{}, fmt.Errorf("rejecting pagination link: %w", err)
 		}
 		currentPageURL = allowed
+	}
+	if opts.BountyOnly && len(pData.InScope) == 0 {
+		pData.OutOfScope = nil
 	}
 	return pData, nil
 }

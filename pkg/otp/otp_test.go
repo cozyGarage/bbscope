@@ -81,6 +81,13 @@ func TestGenerateTOTP_OTPAuthURI(t *testing.T) {
 	}
 }
 
+func TestGenerateTOTP_RejectsHOTP(t *testing.T) {
+	_, err := GenerateTOTP("otpauth://hotp/Test:user@example.com?secret=JBSWY3DPEHPK3PXP&counter=1", time.Now())
+	if err == nil {
+		t.Fatal("expected HOTP URIs to be rejected")
+	}
+}
+
 func TestGenerateTOTP_DigitsPrefix(t *testing.T) {
 	// Test with "digits secret" format
 	secret := "6 JBSWY3DPEHPK3PXP"

@@ -330,19 +330,15 @@ type PlatformStats struct {
 }
 
 func (d *DB) GetStats(ctx context.Context) ([]PlatformStats, error) {
-	// DISTINCT ON collapses the AI join back to one row per raw target: a target
-	// with several AI variants must still count once. The join to programs is a
-	// LEFT JOIN so platforms whose programs have no targets yet still report a
-	// program count.
+	// Count each raw target once using its own in_scope bit. AI variants used
+	// to be joined and DISTINCT ON (t.id) ORDER BY a.id, which picked an
+	// arbitrary override and could flip an in-scope target to out-of-scope.
+	// The join to programs is a LEFT JOIN so platforms whose programs have no
+	// targets yet still report a program count.
 	query := `
 		WITH effective_targets AS (
-			SELECT DISTINCT ON (t.id)
-				t.id,
-				t.program_id,
-				COALESCE(a.in_scope, t.in_scope) AS in_scope
+			SELECT t.id, t.program_id, t.in_scope
 			FROM targets_raw t
-			LEFT JOIN targets_ai_enhanced a ON a.target_id = t.id
-			ORDER BY t.id, a.id
 		)
 		SELECT
 			p.platform,

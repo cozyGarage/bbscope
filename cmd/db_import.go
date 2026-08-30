@@ -142,12 +142,11 @@ func importEntries(ctx context.Context, db *storage.DB, entries []storage.Entry,
 			failed += len(items)
 			continue
 		}
-		if f := flags[key]; f.disabled || f.ignored {
-			if err := db.SetProgramLifecycle(ctx, key.url, f.disabled, f.ignored); err != nil {
-				fmt.Fprintf(os.Stderr, "Error restoring flags for %s: %v\n", key.url, err)
-				failed += len(items)
-				continue
-			}
+		f := flags[key]
+		if err := db.SetProgramLifecycle(ctx, key.url, f.disabled, f.ignored); err != nil {
+			fmt.Fprintf(os.Stderr, "Error restoring flags for %s: %v\n", key.url, err)
+			failed += len(items)
+			continue
 		}
 		imported += len(items)
 	}

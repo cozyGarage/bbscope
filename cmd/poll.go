@@ -45,8 +45,8 @@ var pollCmd = &cobra.Command{
 			return err
 		}
 		if len(pollers) == 0 {
-			utils.Log.Info("No platforms to poll. Set credentials with: bbscope config set <key>")
-			return nil
+			cmd.SilenceUsage = true
+			return fmt.Errorf("no platforms to poll; configure credentials or use a platform subcommand")
 		}
 
 		return runPollWithPollers(cmd, pollers)
@@ -253,8 +253,9 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 			// platform's first run there is nothing in the database to remove, so
 			// this list is empty and needs no first-run suppression.
 			if !isFirstRunForPlatform {
-				printChanges(removedProgramChanges, since)
-				notifier.Dispatch(ctx, removedProgramChanges)
+				filtered := filterChangesForOutput(removedProgramChanges, since)
+				printChanges(filtered, since)
+				notifier.Dispatch(ctx, filtered)
 			}
 		}
 	}

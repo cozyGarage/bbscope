@@ -110,8 +110,7 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		retryClient.HTTPClient.Transport = &http.Transport{
 			Proxy: http.ProxyURL(proxyURL),
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // Only for proxy/debugging
-				MinVersion:         tls.VersionTLS12,
+				MinVersion: tls.VersionTLS12,
 			},
 		}
 
@@ -134,8 +133,8 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		return "", err
 	}
 
-	if firstRes.StatusCode == 403 || firstRes.StatusCode == 406 {
-		return "", errors.New(WAF_BANNED_ERROR)
+	if err := bugcrowdStatusError(firstRes.StatusCode, "login page"); err != nil {
+		return "", err
 	}
 
 	identityUrl, _ := url.Parse("https://identity.bugcrowd.com")
@@ -165,8 +164,8 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		return "", err
 	}
 
-	if firstLoginRes.StatusCode == 403 || firstLoginRes.StatusCode == 406 {
-		return "", errors.New(WAF_BANNED_ERROR)
+	if err := bugcrowdStatusError(firstLoginRes.StatusCode, "login"); err != nil {
+		return "", err
 	}
 
 	needsMfa := gjson.Get(firstLoginRes.BodyString, "needsMfa").Bool()
@@ -181,6 +180,14 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 
 	if otpCode == "" {
 		return "", fmt.Errorf("2FA code is empty")
+	}
+
+	csrfToken = ""
+	for _, cookie := range retryClient.HTTPClient.Jar.Cookies(identityUrl) {
+		if cookie.Name == "csrf-token" {
+			csrfToken = cookie.Value
+			break
+		}
 	}
 
 	// Step 2: Submit OTP
@@ -201,8 +208,8 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		return "", err
 	}
 
-	if otpRes.StatusCode == 403 || otpRes.StatusCode == 406 {
-		return "", errors.New(WAF_BANNED_ERROR)
+	if err := bugcrowdStatusError(otpRes.StatusCode, "OTP challenge"); err != nil {
+		return "", err
 	}
 
 	// Check if OTP failed
@@ -235,14 +242,17 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		return "", err
 	}
 
-	if redirectRes.StatusCode == 403 || redirectRes.StatusCode == 406 {
-		return "", errors.New(WAF_BANNED_ERROR)
+	if err := bugcrowdStatusError(redirectRes.StatusCode, "post-login redirect"); err != nil {
+		return "", err
 	}
 
-	for _, cookie := range retryClient.HTTPClient.Jar.Cookies(identityUrl) {
-		if cookie.Name == "_bugcrowd_session" {
-			utils.Log.Info("Login OK. Fetching programs, please wait...")
-			return cookie.Value, nil
+	bugcrowdUrl, _ := url.Parse("https://bugcrowd.com")
+	for _, origin := range []*url.URL{identityUrl, bugcrowdUrl} {
+		for _, cookie := range retryClient.HTTPClient.Jar.Cookies(origin) {
+			if cookie.Name == "_bugcrowd_session" {
+				utils.Log.Info("Login OK. Fetching programs, please wait...")
+				return cookie.Value, nil
+			}
 		}
 	}
 
@@ -323,6 +333,7 @@ func resolveBugcrowdAPIURL(pathOrURL string) (string, error) {
 func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool) ([]string, error) {
 	pageIndex := 1
 	var totalCount int
+	totalCountKnown := false
 	paths := []string{}
 	fetchedPrograms := make(map[string]bool)
 	allHandlersFoundCounter := 0
@@ -355,8 +366,11 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 		if !result.Exists() {
 			return nil, fmt.Errorf("bugcrowd: listing response missing engagements array")
 		}
-		if totalCount == 0 {
-			totalCount = int(gjson.Get(res.BodyString, "paginationMeta.totalCount").Int())
+		if !totalCountKnown {
+			if tc := gjson.Get(res.BodyString, "paginationMeta.totalCount"); tc.Exists() {
+				totalCount = int(tc.Int())
+				totalCountKnown = true
+			}
 		}
 
 		// If the engagements array is empty, it means there are no more programs to fetch on subsequent pages.
@@ -389,7 +403,7 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 		pageIndex++
 
 		// Check if we have fetched all programs using allHandlersFoundCounter
-		if allHandlersFoundCounter >= totalCount {
+		if totalCountKnown && allHandlersFoundCounter >= totalCount {
 			break
 		}
 	}

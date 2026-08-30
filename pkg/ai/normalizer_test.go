@@ -164,6 +164,8 @@ func TestVariantAllowedRejectsWidening(t *testing.T) {
 		{"unrelated host", "foo.example.com", "evil.com", false},
 		{"suffix-confusable host", "example.com", "example.com.evil.net", false},
 		{"scheme and path wrapping the suffix", "example.com", "http://evil.com/x.example.com", false},
+		{"userinfo wrapping the original host", "example.com", "evil.com@example.com", false},
+		{"userinfo URL wrapping the original host", "example.com", "https://evil.com@example.com/", false},
 		{"wildcard over the original apex", "example.com", "*.example.com", false},
 		{"suffix match on a truncated original", "app.*", "evil.app", false},
 		{"path-scoped URL restated as apex", "https://example.com/api", "example.com", false},

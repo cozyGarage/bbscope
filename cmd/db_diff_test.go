@@ -45,7 +45,11 @@ func sampleChanges() []storage.Change {
 // TestOutputDiffCSV parses the output rather than string-matching it, so the
 // test confirms the CSV is well formed rather than that it looks a certain way.
 func TestOutputDiffCSV(t *testing.T) {
-	out := captureStdout(t, func() { outputDiffCSV(sampleChanges()) })
+	out := captureStdout(t, func() {
+		if err := outputDiffCSV(sampleChanges()); err != nil {
+			t.Errorf("outputDiffCSV: %v", err)
+		}
+	})
 
 	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
 	if err != nil {
@@ -78,7 +82,11 @@ func TestOutputDiffCSVEscapesHostileFields(t *testing.T) {
 		ProgramURL:       `quote"and,comma`,
 	}}
 
-	out := captureStdout(t, func() { outputDiffCSV(changes) })
+	out := captureStdout(t, func() {
+		if err := outputDiffCSV(changes); err != nil {
+			t.Errorf("outputDiffCSV: %v", err)
+		}
+	})
 	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
 	if err != nil {
 		t.Fatalf("output is not valid CSV: %v\n%s", err, out)
@@ -97,7 +105,11 @@ func TestOutputDiffCSVEscapesHostileFields(t *testing.T) {
 // TestOutputDiffJSON checks the output parses, which the previous Printf-built
 // JSON did not guarantee.
 func TestOutputDiffJSON(t *testing.T) {
-	out := captureStdout(t, func() { outputDiffJSON(sampleChanges()) })
+	out := captureStdout(t, func() {
+		if err := outputDiffJSON(sampleChanges()); err != nil {
+			t.Errorf("outputDiffJSON: %v", err)
+		}
+	})
 
 	var got []diffEntry
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -126,7 +138,11 @@ func TestOutputDiffJSONEscapesHostileFields(t *testing.T) {
 		ProgramURL:       `back\slash`,
 	}}
 
-	out := captureStdout(t, func() { outputDiffJSON(changes) })
+	out := captureStdout(t, func() {
+		if err := outputDiffJSON(changes); err != nil {
+			t.Errorf("outputDiffJSON: %v", err)
+		}
+	})
 
 	var got []diffEntry
 	if err := json.Unmarshal([]byte(out), &got); err != nil {

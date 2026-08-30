@@ -110,6 +110,10 @@ func TestIntegration_AddCustomTarget(t *testing.T) {
 	if added2 {
 		t.Fatalf("expected repeat AddCustomTarget to report added=false")
 	}
+
+	if err := db.RemoveCustomTarget(ctx, target, "wildcard", progURL+"/"); err != nil {
+		t.Fatalf("RemoveCustomTarget with trailing slash: %v", err)
+	}
 }
 
 func TestIntegration_GetStatsAndSearch(t *testing.T) {
@@ -205,6 +209,32 @@ func TestIntegration_GetStatsAIVariantsCountOnce(t *testing.T) {
 
 // TestIntegration_GetStatsCountsProgramsWithoutTargets covers the inner-JOIN
 // fix: a program that has no targets yet still belongs in the program count.
+func TestIntegration_GetStatsPrefersInScopeWhenVariantsDisagree(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/stats"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{
+			URI: "api.example.com", Category: "url", InScope: true,
+			Variants: []TargetVariant{
+				{Value: "api.example.com", HasInScope: true, InScope: false},
+				{Value: "www.api.example.com", HasInScope: true, InScope: true},
+			},
+		},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	mine := statsFor(t, db, ctx, platform)
+	if mine.InScopeCount != 1 || mine.OutOfScopeCount != 0 {
+		t.Fatalf("stats must use the raw target in_scope, not an arbitrary AI variant, got %+v", mine)
+	}
+}
+
 func TestIntegration_GetStatsCountsProgramsWithoutTargets(t *testing.T) {
 	db := openTestDB(t)
 	platform := uniquePlatform(t)
