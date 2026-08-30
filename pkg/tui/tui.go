@@ -15,10 +15,15 @@ type ViewMode int
 
 const (
 	ViewDashboard ViewMode = iota
-	ViewPolling
+	ViewBrowser
 	ViewSearch
+	ViewPolling
 	ViewHelp
 )
+
+// chromeHeight is the number of rows the header and footer occupy, subtracted
+// from the terminal height when sizing scrollable lists.
+const chromeHeight = 6
 
 // Model represents the main application state
 type Model struct {
@@ -36,9 +41,10 @@ type Model struct {
 	recentChanges []storage.Change
 	statsLoaded   bool
 
-	// Polling state
-	pollingActive bool
-	pollingStatus string
+	browser  browserState
+	search   searchState
+	polling  pollingState
+	pollFunc PollFunc
 
 	// Styling
 	styles Styles
@@ -67,16 +73,25 @@ type Styles struct {
 	Error         lipgloss.Style
 }
 
-// NewModel creates a new TUI model with minimal/clean styling
+// NewModel creates a new TUI model with minimal/clean styling.
 func NewModel(db *storage.DB) Model {
+	return NewModelWithPoller(db, defaultPollFunc(db))
+}
+
+// NewModelWithPoller builds a model with an injectable poll implementation.
+// Tests use it to drive the polling view without touching the network.
+func NewModelWithPoller(db *storage.DB, pollFunc PollFunc) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return Model{
-		db:     db,
-		ctx:    ctx,
-		cancel: cancel,
-		view:   ViewDashboard,
-		styles: newStyles(),
+		db:       db,
+		ctx:      ctx,
+		cancel:   cancel,
+		view:     ViewDashboard,
+		styles:   newStyles(),
+		browser:  newBrowserState(),
+		search:   newSearchState(),
+		pollFunc: pollFunc,
 	}
 }
 
@@ -148,6 +163,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.browser.setSize(msg.Width, msg.Height-chromeHeight)
+		m.search.setSize(msg.Width, msg.Height-chromeHeight)
 		return m, nil
 
 	case statsMsg:
@@ -159,57 +176,86 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recentChanges = []storage.Change(msg)
 		return m, nil
 
-	case pollingStatusMsg:
-		m.pollingStatus = string(msg)
-		return m, nil
-
-	case pollingCompleteMsg:
-		m.pollingActive = false
-		return m, tea.Batch(
-			loadStatsCmd(m.db),
-			loadRecentChangesCmd(m.db),
-		)
-
 	case errMsg:
 		m.err = error(msg)
+		m.browser.loading = false
+		m.search.searching = false
+		return m, nil
+	}
+
+	// Views own the message types they introduced.
+	if cmd, handled := m.updateBrowser(msg); handled {
+		return m, cmd
+	}
+	if m.updateSearch(msg) {
+		return m, nil
+	}
+	if cmd, handled := m.updatePolling(msg); handled {
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+// handleKeyPress processes keyboard input.
+//
+// The active view gets first refusal, because a view with a text input or a
+// filter prompt must be able to consume ordinary letters before they are read
+// as global shortcuts. Typing "d" into the search box should not jump to the
+// dashboard.
+func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m.quit()
+	}
+
+	switch m.view {
+	case ViewSearch:
+		// The search box consumes every remaining key.
+		return m.searchKeyPress(msg)
+	case ViewBrowser:
+		if handled, model, cmd := m.browserKeyPress(msg); handled {
+			return model, cmd
+		}
+	}
+
+	switch msg.String() {
+	case "q":
+		return m.quit()
+
+	case "d":
+		m.view = ViewDashboard
+		return m, tea.Batch(loadStatsCmd(m.db), loadRecentChangesCmd(m.db))
+
+	case "b":
+		m.view = ViewBrowser
+		return m.enterBrowser()
+
+	case "s", "/":
+		m.view = ViewSearch
+		return m.enterSearch()
+
+	case "p":
+		m.view = ViewPolling
+		return m.startPolling()
+
+	case "?":
+		m.view = ViewHelp
+		return m, nil
+
+	case "esc":
+		m.view = ViewDashboard
 		return m, nil
 	}
 
 	return m, nil
 }
 
-// handleKeyPress processes keyboard input
-func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c", "q":
-		m.quitting = true
-		if m.cancel != nil {
-			m.cancel()
-		}
-		return m, tea.Quit
-
-	case "d":
-		m.view = ViewDashboard
-		return m, nil
-
-	case "p":
-		if !m.pollingActive {
-			m.view = ViewPolling
-			m.pollingActive = true
-			return m, startPollingCmd(m.db, m.ctx)
-		}
-		return m, nil
-
-	case "s":
-		m.view = ViewSearch
-		return m, nil
-
-	case "?":
-		m.view = ViewHelp
-		return m, nil
+func (m Model) quit() (tea.Model, tea.Cmd) {
+	m.quitting = true
+	if m.cancel != nil {
+		m.cancel()
 	}
-
-	return m, nil
+	return m, tea.Quit
 }
 
 // View renders the current view
@@ -223,35 +269,39 @@ func (m Model) View() string {
 	switch m.view {
 	case ViewDashboard:
 		content = m.renderDashboard()
-	case ViewPolling:
-		content = m.renderPolling()
+	case ViewBrowser:
+		content = m.renderBrowser()
 	case ViewSearch:
 		content = m.renderSearch()
+	case ViewPolling:
+		content = m.renderPolling()
 	case ViewHelp:
 		content = m.renderHelp()
 	}
 
 	if m.err != nil {
-		errLine := m.styles.Subtitle.Render("Error: " + m.err.Error())
+		errLine := m.styles.Error.Render("Error: " + m.err.Error())
 		content = lipgloss.JoinVertical(lipgloss.Left, content, "", errLine)
 	}
 
-	// Add footer
-	footer := m.renderFooter()
-
-	return lipgloss.JoinVertical(lipgloss.Left, content, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, content, m.renderFooter())
 }
 
-// renderFooter renders the bottom help bar
+// renderFooter renders the bottom help bar, listing the keys the current view
+// actually responds to.
 func (m Model) renderFooter() string {
-	helps := []string{
-		"[d]ashboard",
-		"[p]oll",
-		"[s]earch",
-		"[?]help",
-		"[q]uit",
+	var helps []string
+
+	switch m.view {
+	case ViewBrowser:
+		helps = []string{"[↑↓] move", "[enter] open", "[esc] back", "[o] in-scope filter", "[/] filter", "[?] help", "[q] quit"}
+	case ViewSearch:
+		helps = []string{"[enter] search", "[esc] dashboard", "[?]help", "[ctrl+c] quit"}
+	case ViewPolling:
+		helps = []string{"[d]ashboard", "[esc] back", "[?]help", "[q]uit"}
+	default:
+		helps = []string{"[d]ashboard", "[b]rowse", "[s]earch", "[p]oll", "[?]help", "[q]uit"}
 	}
 
-	helpText := lipgloss.JoinHorizontal(lipgloss.Left, helps...)
-	return "\n" + m.styles.Help.Render(helpText)
+	return "\n" + m.styles.Help.Render(lipgloss.JoinHorizontal(lipgloss.Left, helps...))
 }
