@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/pollrun"
 )
 
 var daemonCmd = &cobra.Command{
@@ -71,7 +72,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	platformFilter := parsePlatformFilter(platformsFlag)
+	platformFilter := pollrun.ParsePlatformFilter(platformsFlag)
 	proxyURL, _ := rootCmd.PersistentFlags().GetString("proxy")
 
 	// pollCmd is never dispatched by cobra here, so its persistent flags are
@@ -85,7 +86,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	runOnce := func() error {
 		pollCmd.SetContext(ctx)
-		pollers, err := buildPollersFromConfig(ctx, proxyURL, platformFilter)
+		pollers, err := pollrun.BuildPollers(ctx, proxyURL, platformFilter)
 		if err != nil {
 			return err
 		}

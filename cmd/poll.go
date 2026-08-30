@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
-
-	"errors"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -16,20 +13,15 @@ import (
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/ai"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	"github.com/cozyGarage/bbscope/v2/pkg/pollrun"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 // pollCmd implements: bbscope poll
-// Flags (from REFACTOR.md):
 //
-//	--platform string   Comma-separated platforms or "all" (default)
-//	--program string    Filter by program (handle or full URL)
-//	--db                Save results to the database
-//	--concurrency int   Number of concurrent fetches
-//	--since string      Print changes since RFC3339 timestamp (when using --db)
-//
-// Uses global flags from root (proxy, output, delimiter, bbp-only, private-only, oos, loglevel)
+// Uses global flags from root (proxy, loglevel) plus the persistent flags
+// declared below, which every poll subcommand inherits.
 var pollCmd = &cobra.Command{
 	Use:   "poll",
 	Short: "Poll platforms and fetch scopes",
@@ -39,8 +31,8 @@ var pollCmd = &cobra.Command{
 		}
 
 		proxyURL, _ := cmd.Flags().GetString("proxy")
-		// Parent poll includes all configured platforms (including Immunefi).
-		pollers, err := buildPollersFromConfig(cmd.Context(), proxyURL, nil)
+		// Parent poll includes every configured real platform.
+		pollers, err := pollrun.BuildPollers(cmd.Context(), proxyURL, nil)
 		if err != nil {
 			return err
 		}
@@ -69,23 +61,21 @@ func init() {
 	pollCmd.PersistentFlags().Bool("ai", false, "Enable LLM-assisted normalization (requires ai.api_key or OPENAI_API_KEY)")
 }
 
-// runPollWithPollers executes the polling flow using the provided pollers.
+// runPollWithPollers translates the command's flags into pollrun.Options and
+// runs the poll, wiring the CLI's printing and notification behavior in as
+// callbacks. The orchestration itself lives in pkg/pollrun so the TUI can drive
+// the same code path.
 func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) error {
-	categories, _ := cmd.Flags().GetString("category")
 	useDB, _ := cmd.Flags().GetBool("db")
 	useAI, _ := cmd.Flags().GetBool("ai")
 	sinceStr, _ := cmd.Flags().GetString("since")
 
-	var since time.Time
-	if sinceStr != "" {
-		if !useDB {
-			return fmt.Errorf("--since requires --db")
-		}
-		parsed, err := time.Parse(time.RFC3339, sinceStr)
-		if err != nil {
-			return fmt.Errorf("invalid --since, need RFC3339: %w", err)
-		}
-		since = parsed
+	if sinceStr != "" && !useDB {
+		return fmt.Errorf("--since requires --db")
+	}
+	since, err := pollrun.ParseSince(sinceStr)
+	if err != nil {
+		return err
 	}
 
 	var db *storage.DB
@@ -106,42 +96,11 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 	}
 
 	var aiNormalizer ai.Normalizer
-	if useAI {
-		proxyURL, _ := rootCmd.Flags().GetString("proxy")
-		cfg := ai.Config{
-			Provider:           strings.TrimSpace(viper.GetString("ai.provider")),
-			APIKey:             strings.TrimSpace(viper.GetString("ai.api_key")),
-			Model:              strings.TrimSpace(viper.GetString("ai.model")),
-			MaxBatch:           viper.GetInt("ai.max_batch"),
-			MaxConcurrency:     viper.GetInt("ai.max_concurrency"),
-			Endpoint:           strings.TrimSpace(viper.GetString("ai.endpoint")),
-			Proxy:              strings.TrimSpace(viper.GetString("ai.proxy")),
-			InsecureSkipVerify: viper.GetBool("ai.insecure_skip_verify"),
-		}
-		// Command-line proxy flag takes precedence over config file
-		if proxyURL != "" {
-			cfg.Proxy = proxyURL
-		}
-		if cfg.APIKey == "" {
-			cfg.APIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-		}
-
-		normalizer, err := ai.NewNormalizer(cfg)
+	if useAI && useDB {
+		aiNormalizer, err = buildAINormalizer()
 		if err != nil {
 			return err
 		}
-		aiNormalizer = normalizer
-	}
-
-	// Use the command's context so SIGINT / cobra cancelation propagates to
-	// in-flight polling work. Fall back to a background context if unset.
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	concurrency, _ := cmd.Flags().GetInt("concurrency")
-	if concurrency <= 0 {
-		concurrency = 5 // Default to 5 if invalid
 	}
 
 	// Change detection only happens on the --db path, so there is nothing to
@@ -153,286 +112,60 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		notifier = nil
 	}
 
-	for _, p := range pollers {
-		utils.Log.Infof("Fetching scope from %s...", p.Name())
-
-		bbpOnly, _ := cmd.Flags().GetBool("bbp-only")
-		pvtOnly, _ := cmd.Flags().GetBool("private-only")
-		opts := platforms.PollOptions{
-			Categories:  categories,
-			BountyOnly:  bbpOnly,
-			PrivateOnly: pvtOnly,
-		}
-
-		isFirstRunForPlatform := false
-		if useDB {
-			programCount, err := db.GetActiveProgramCount(ctx, p.Name())
-			if err != nil {
-				// Don't fail the whole run, but we can't do the "first run" check.
-				utils.Log.Warnf("Could not get program count for %s: %v", p.Name(), err)
-			} else {
-				isFirstRunForPlatform = programCount == 0
-			}
-		}
-
-		var ignoredPrograms map[string]bool
-		if useDB {
-			rawIgnored, err := db.GetIgnoredPrograms(ctx, p.Name())
-			if err != nil {
-				utils.Log.Warnf("Could not get ignored programs for %s: %v", p.Name(), err)
-				ignoredPrograms = make(map[string]bool) // Continue with an empty map
-			} else {
-				ignoredPrograms = make(map[string]bool, len(rawIgnored))
-				for u, v := range rawIgnored {
-					if !v {
-						continue
-					}
-					ignoredPrograms[u] = true
-					if n := storage.NormalizeProgramURL(u); n != "" {
-						ignoredPrograms[n] = true
-					}
-				}
-			}
-		}
-
-		handles, err := p.ListProgramHandles(ctx, opts)
-		if err != nil {
-			return err
-		}
-
-		if isFirstRunForPlatform && len(handles) > 0 {
-			utils.Log.Infof("First poll for %s, populating database...", p.Name())
-		}
-
-		if useDB {
-			dbProgramCount, err := db.GetActiveProgramCount(ctx, p.Name())
-			if err != nil {
-				utils.Log.Warnf("Could not get program count for %s: %v", p.Name(), err)
-			}
-
-			// PLATFORM-LEVEL SAFETY CHECK: If the poller returns 0 programs, but we have many in the DB,
-			// it's likely the poller failed or there's a temporary API issue. We abort the sync
-			// for this platform to prevent wiping all its programs.
-			if len(handles) == 0 && dbProgramCount > 10 { // Using a threshold > 10
-				utils.Log.Errorf("Poller for %s returned 0 programs, but database has %d. Aborting sync for this platform to prevent data loss.", p.Name(), dbProgramCount)
-				continue // Skip to the next platform
-			}
-		}
-
-		// Use concurrent processing with worker pool pattern
-		polledProgramURLs, err := processProgramsConcurrently(ctx, cmd, p, handles, opts, useDB, db, ignoredPrograms, isFirstRunForPlatform, concurrency, aiNormalizer, since, notifier)
-		if err != nil {
-			// Do not abort remaining platforms, and skip SyncPlatformPrograms: a partial
-			// success list would incorrectly disable programs that only failed to fetch.
-			utils.Log.Warnf("Some program fetches failed for %s: %v; skipping platform sync for this run", p.Name(), err)
-			continue
-		}
-
-		if useDB {
-			// After processing all programs for a platform, sync the state.
-			// This will mark any programs that were not in the latest poll as disabled.
-			removedProgramChanges, err := db.SyncPlatformPrograms(ctx, p.Name(), polledProgramURLs)
-			if err != nil {
-				if errors.Is(err, storage.ErrAbortingPartialSync) {
-					utils.Log.Errorf("Skipping platform sync for %s: %v", p.Name(), err)
-				} else {
-					utils.Log.Warnf("Failed to sync removed programs for platform %s: %v", p.Name(), err)
-				}
-			}
-			// SyncPlatformPrograms logs its own removals transactionally. On a
-			// platform's first run there is nothing in the database to remove, so
-			// this list is empty and needs no first-run suppression.
-			if !isFirstRunForPlatform {
-				printChanges(removedProgramChanges, since)
-				notifier.Dispatch(ctx, removedProgramChanges)
-			}
-		}
+	// Use the command's context so SIGINT / cobra cancelation propagates to
+	// in-flight polling work. Fall back to a background context if unset.
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return nil
+
+	categories, _ := cmd.Flags().GetString("category")
+	bbpOnly, _ := cmd.Flags().GetBool("bbp-only")
+	pvtOnly, _ := cmd.Flags().GetBool("private-only")
+	concurrency, _ := cmd.Flags().GetInt("concurrency")
+	output, _ := cmd.Flags().GetString("output")
+	delimiter, _ := cmd.Flags().GetString("delimiter")
+	oos, _ := cmd.Flags().GetBool("oos")
+
+	return pollrun.Run(ctx, pollers, pollrun.Options{
+		Categories:  categories,
+		BountyOnly:  bbpOnly,
+		PrivateOnly: pvtOnly,
+		Concurrency: concurrency,
+		DB:          db,
+		AI:          aiNormalizer,
+
+		OnScope: func(pd scope.ProgramData) {
+			scope.PrintProgramScope(pd, output, delimiter, oos)
+		},
+		OnChanges: func(ctx context.Context, changes []storage.Change) {
+			printChanges(changes, since)
+			notifier.Dispatch(ctx, changes)
+		},
+	})
 }
 
-// processProgramsConcurrently processes programs using a worker pool pattern for concurrent fetching.
-func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p platforms.PlatformPoller, handles []string, opts platforms.PollOptions, useDB bool, db *storage.DB, ignoredPrograms map[string]bool, isFirstRunForPlatform bool, concurrency int, aiNormalizer ai.Normalizer, since time.Time, notifier *changeNotifier) ([]string, error) {
-	if len(handles) == 0 {
-		return []string{}, nil
+// buildAINormalizer assembles the AI configuration from viper and flags.
+func buildAINormalizer() (ai.Normalizer, error) {
+	proxyURL, _ := rootCmd.Flags().GetString("proxy")
+	cfg := ai.Config{
+		Provider:           strings.TrimSpace(viper.GetString("ai.provider")),
+		APIKey:             strings.TrimSpace(viper.GetString("ai.api_key")),
+		Model:              strings.TrimSpace(viper.GetString("ai.model")),
+		MaxBatch:           viper.GetInt("ai.max_batch"),
+		MaxConcurrency:     viper.GetInt("ai.max_concurrency"),
+		Endpoint:           strings.TrimSpace(viper.GetString("ai.endpoint")),
+		Proxy:              strings.TrimSpace(viper.GetString("ai.proxy")),
+		InsecureSkipVerify: viper.GetBool("ai.insecure_skip_verify"),
 	}
-
-	// Channel to distribute work
-	handleChan := make(chan string, len(handles))
-
-	// Results collection with mutex protection
-	var mu sync.Mutex
-	polledProgramURLs := make([]string, 0, len(handles))
-	var firstError error
-	var errorMu sync.Mutex
-
-	// Worker pool
-	var wg sync.WaitGroup
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for h := range handleChan {
-				// Stop pulling new work once the context is done. Record the
-				// cancellation as an error: the caller uses a non-nil error to skip
-				// SyncPlatformPrograms, and syncing against the truncated URL list a
-				// canceled run produces would disable every program not yet fetched.
-				if err := ctx.Err(); err != nil {
-					errorMu.Lock()
-					if firstError == nil {
-						firstError = err
-					}
-					errorMu.Unlock()
-					return
-				}
-				pd, err := p.FetchProgramScope(ctx, h, opts)
-				if err != nil {
-					// Log error but continue processing other programs
-					utils.Log.Warnf("Failed to fetch scope for %s: %v", h, err)
-					errorMu.Lock()
-					if firstError == nil {
-						firstError = err // Store first error but don't stop processing
-					}
-					errorMu.Unlock()
-					continue
-				}
-
-				if useDB && (ignoredPrograms[pd.Url] || ignoredPrograms[storage.NormalizeProgramURL(pd.Url)]) {
-					utils.Log.Debugf("Skipping ignored program: %s", pd.Url)
-					continue
-				}
-
-				// Add to polled URLs (thread-safe); normalize so sync identity matches upsert.
-				mu.Lock()
-				polledProgramURLs = append(polledProgramURLs, storage.NormalizeProgramURL(pd.Url))
-				mu.Unlock()
-
-				if !useDB {
-					output, _ := cmd.Flags().GetString("output")
-					delimiter, _ := cmd.Flags().GetString("delimiter")
-					oos, _ := cmd.Flags().GetBool("oos")
-					scope.PrintProgramScope(pd, output, delimiter, oos)
-					continue
-				}
-
-				// Process database operations
-				var allItems []storage.TargetItem
-				for _, s := range pd.InScope {
-					allItems = append(allItems, storage.TargetItem{URI: s.Target, Category: s.Category, Description: s.Description, InScope: true})
-				}
-				for _, s := range pd.OutOfScope {
-					allItems = append(allItems, storage.TargetItem{URI: s.Target, Category: s.Category, Description: s.Description, InScope: false})
-				}
-
-				processedItems := make([]storage.TargetItem, 0, len(allItems))
-				var aiCandidates []storage.TargetItem
-				var aiEnhancements map[string][]storage.TargetVariant
-
-				if aiNormalizer != nil && len(allItems) > 0 {
-					var err error
-					aiEnhancements, err = db.ListAIEnhancements(ctx, pd.Url)
-					if err != nil {
-						utils.Log.Warnf("Failed to load AI enhancements for %s: %v", pd.Url, err)
-						aiEnhancements = nil
-					}
-				}
-
-				if aiNormalizer != nil && len(allItems) > 0 {
-					aiCandidates = make([]storage.TargetItem, 0, len(allItems))
-					for _, item := range allItems {
-						key := storage.BuildTargetCategoryKey(item.URI, item.Category)
-						if variants, ok := aiEnhancements[key]; ok && len(variants) > 0 {
-							clone := item
-							clone.Variants = append([]storage.TargetVariant(nil), variants...)
-							processedItems = append(processedItems, clone)
-							continue
-						}
-						aiCandidates = append(aiCandidates, item)
-					}
-
-					if len(aiCandidates) > 0 {
-						normalized, err := aiNormalizer.NormalizeTargets(ctx, ai.ProgramInfo{
-							ProgramURL: pd.Url,
-							Platform:   p.Name(),
-							Handle:     h,
-						}, aiCandidates)
-						if err != nil {
-							utils.Log.Warnf("AI normalization failed for %s: %v", pd.Url, err)
-							processedItems = append(processedItems, aiCandidates...)
-						} else if len(normalized) > 0 {
-							processedItems = append(processedItems, normalized...)
-						} else {
-							processedItems = append(processedItems, aiCandidates...)
-						}
-					}
-
-					// if there were no candidates but also no pre-existing enhancements,
-					// ensure raw items still get processed
-					if len(processedItems) == 0 {
-						processedItems = append(processedItems, allItems...)
-					}
-				} else if len(processedItems) == 0 {
-					processedItems = append(processedItems, allItems...)
-				}
-
-				entries, err := storage.BuildEntries(pd.Url, p.Name(), h, processedItems)
-				if err != nil {
-					errorMu.Lock()
-					if firstError == nil {
-						firstError = err
-					}
-					errorMu.Unlock()
-					continue
-				}
-
-				// The upsert writes scope_changes inside its own transaction, so
-				// the first run for a platform must suppress logging there rather
-				// than by skipping a separate LogChanges call afterwards.
-				changes, err := db.UpsertProgramEntriesWithOptions(
-					ctx,
-					storage.NormalizeProgramURL(pd.Url),
-					p.Name(),
-					h,
-					entries,
-					storage.UpsertOptions{SkipChangeLog: isFirstRunForPlatform},
-				)
-
-				if err != nil {
-					if errors.Is(err, storage.ErrAbortingScopeWipe) {
-						utils.Log.Warnf("Potential scope wipe detected for program %s. Skipping update. This might be due to a broken poller or a platform API change.", pd.Url)
-						continue // Don't treat this as a fatal error for the whole poll
-					}
-					// For other errors, log but continue processing
-					utils.Log.Warnf("Database error for program %s: %v", pd.Url, err)
-					errorMu.Lock()
-					if firstError == nil {
-						firstError = err
-					}
-					errorMu.Unlock()
-					continue
-				}
-
-				// Print changes (thread-safe - fmt.Printf is safe for concurrent use)
-				if !isFirstRunForPlatform {
-					printChanges(changes, since)
-					notifier.Dispatch(ctx, changes)
-				}
-			}
-		}()
+	// Command-line proxy flag takes precedence over config file
+	if proxyURL != "" {
+		cfg.Proxy = proxyURL
 	}
-
-	// Send all handles to the channel
-	for _, h := range handles {
-		handleChan <- h
+	if cfg.APIKey == "" {
+		cfg.APIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	}
-	close(handleChan)
-
-	// Wait for all workers to finish
-	wg.Wait()
-
-	// Return first error if any occurred, but still return the results
-	// This allows partial success - some programs may have been processed successfully
-	return polledProgramURLs, firstError
+	return ai.NewNormalizer(cfg)
 }
 
 func printChanges(changes []storage.Change, since time.Time) {
