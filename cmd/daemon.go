@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -120,7 +121,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		rebuilt, buildErr := rebuildPollers()
 		if buildErr != nil {
 			pollers = nil
-			return fmt.Errorf("re-authenticate after %v: %w", err, buildErr)
+			return fmt.Errorf("re-authenticate: %w", errors.Join(err, buildErr))
 		}
 		pollers = rebuilt
 		return runPollWithPollers(pollCmd, pollers)
