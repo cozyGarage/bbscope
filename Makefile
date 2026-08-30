@@ -111,9 +111,9 @@ test-integration:
 ## test-fuzz: Run short fuzz targets (same budget as CI)
 test-fuzz:
 	@echo "Fuzzing parsers..."
-	go test -fuzz=FuzzNormalizeTarget -fuzztime=15s ./pkg/storage/
-	go test -fuzz=FuzzCanonicalName -fuzztime=15s ./pkg/platforms/
-	go test -fuzz=FuzzWebhookURLAllowed -fuzztime=15s ./pkg/notify/
+	go test -run=^$ -fuzz=FuzzNormalizeTarget -fuzztime=15s ./pkg/storage/
+	go test -run=^$ -fuzz=FuzzCanonicalName -fuzztime=15s ./pkg/platforms/
+	go test -run=^$ -fuzz=FuzzWebhookURLAllowed -fuzztime=15s ./pkg/notify/
 
 ## coverage: Generate test coverage report
 coverage:

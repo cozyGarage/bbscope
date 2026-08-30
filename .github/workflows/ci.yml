@@ -267,7 +267,10 @@ jobs:
           cache: true
 
       - name: Fuzz parsers
+        # -run=^$ skips regular tests. `go test -fuzz=... ./pkg/storage/` would
+        # otherwise run TestIntegrationDatabaseIsConfiguredInCI, which fails
+        # when TEST_DB_URL is unset (GitHub sets CI=true on every job).
         run: |
-          go test -fuzz=FuzzNormalizeTarget -fuzztime=15s ./pkg/storage/
-          go test -fuzz=FuzzCanonicalName -fuzztime=15s ./pkg/platforms/
-          go test -fuzz=FuzzWebhookURLAllowed -fuzztime=15s ./pkg/notify/
+          go test -run=^$ -fuzz=FuzzNormalizeTarget -fuzztime=15s ./pkg/storage/
+          go test -run=^$ -fuzz=FuzzCanonicalName -fuzztime=15s ./pkg/platforms/
+          go test -run=^$ -fuzz=FuzzWebhookURLAllowed -fuzztime=15s ./pkg/notify/
