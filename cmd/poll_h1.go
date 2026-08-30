@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
-	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	h1platform "github.com/cozyGarage/bbscope/v2/pkg/platforms/hackerone"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
@@ -17,13 +18,13 @@ var pollH1Cmd = &cobra.Command{
 	Short: "Poll HackerOne programs",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		// Use credentials package (checks keychain first, then config file)
-		user := credentials.Get("hackerone.username")
-		token := credentials.Get("hackerone.token")
+		user := flagOrCredential(cmd, "user", "hackerone.username")
+		token := flagOrCredential(cmd, "token", "hackerone.token")
 		if user == "" || token == "" {
-			utils.Log.Error("hackerone requires a username and token")
 			utils.Log.Info("Set credentials with: bbscope config set hackerone.username <user>")
 			utils.Log.Info("                      bbscope config set hackerone.token <token>")
-			return nil
+			cmd.SilenceUsage = true
+			return errors.New("hackerone requires a username and token")
 		}
 
 		proxy, _ := rootCmd.Flags().GetString("proxy")

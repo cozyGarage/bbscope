@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
@@ -16,6 +18,20 @@ import (
 	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
+
+// flagOrCredential prefers an explicitly-set command-line flag over stored
+// credentials.
+//
+// credentials.Get consults the OS keychain before the config file, and the
+// poll flags are bound to viper, which it only reaches as a fallback. Without
+// this an explicit --token could not override a stale keychain entry, contrary
+// to the documented precedence.
+func flagOrCredential(cmd *cobra.Command, flagName, credentialKey string) string {
+	if f := cmd.Flags().Lookup(flagName); f != nil && f.Changed {
+		return f.Value.String()
+	}
+	return credentials.Get(credentialKey)
+}
 
 // buildPollersFromConfig constructs authenticated platform pollers from keychain/config.
 // platformFilter is a set of short names (h1, bc, it, ywh, immunefi, dev). Empty/nil means all.
@@ -99,7 +115,10 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 		pollers = append(pollers, &implatform.Poller{})
 	}
 
-	if allow("dev") {
+	// The hidden `poll dev` command is the only opt-in for the fixture poller.
+	// allow("dev") is true when the filter is empty ("all platforms"), which
+	// would persist sample example.com programs into a real --db run.
+	if platformFilter["dev"] {
 		pollers = append(pollers, &devplatform.Poller{})
 	}
 

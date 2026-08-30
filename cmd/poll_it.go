@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
-	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	itplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/intigriti"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
@@ -17,11 +18,11 @@ var pollItCmd = &cobra.Command{
 	Short: "Poll Intigriti programs",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		// Use credentials package (checks keychain first, then config file)
-		token := credentials.Get("intigriti.token")
+		token := flagOrCredential(cmd, "token", "intigriti.token")
 		if token == "" {
-			utils.Log.Error("intigriti requires a token")
 			utils.Log.Info("Set credential with: bbscope config set intigriti.token <token>")
-			return nil
+			cmd.SilenceUsage = true
+			return errors.New("intigriti requires a token")
 		}
 
 		proxy, _ := rootCmd.Flags().GetString("proxy")
