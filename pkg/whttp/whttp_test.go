@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,12 +66,19 @@ func TestGetDefaultClient(t *testing.T) {
 }
 
 func TestSetupProxyDoesNotSkipTLSVerify(t *testing.T) {
-	client := GetDefaultClient()
-	orig := client.HTTPClient.Transport
-	t.Cleanup(func() { client.HTTPClient.Transport = orig })
+	unproxied := GetDefaultClient()
+	origTransport := unproxied.HTTPClient.Transport
+	t.Cleanup(func() { _ = SetupProxy("") })
 
 	if err := SetupProxy("http://127.0.0.1:8080"); err != nil {
 		t.Fatalf("SetupProxy: %v", err)
+	}
+	client := GetDefaultClient()
+	if client == unproxied {
+		t.Fatal("SetupProxy must not reuse the unproxied default client")
+	}
+	if unproxied.HTTPClient.Transport != origTransport {
+		t.Fatal("SetupProxy must not mutate the unproxied default client's transport")
 	}
 	tr, ok := client.HTTPClient.Transport.(*http.Transport)
 	if !ok {
@@ -79,6 +87,21 @@ func TestSetupProxyDoesNotSkipTLSVerify(t *testing.T) {
 	if tr.TLSClientConfig != nil && tr.TLSClientConfig.InsecureSkipVerify {
 		t.Fatal("--proxy must not disable TLS verification on the shared client")
 	}
+}
+
+func TestSetupProxyConcurrentDoesNotRace(t *testing.T) {
+	t.Cleanup(func() { _ = SetupProxy("") })
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = SetupProxy("http://127.0.0.1:8080")
+			_ = GetDefaultClient()
+			_ = SetupProxy("")
+		}()
+	}
+	wg.Wait()
 }
 
 func TestSendHTTPRequest_Success(t *testing.T) {

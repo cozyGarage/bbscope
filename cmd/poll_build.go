@@ -35,6 +35,8 @@ func flagOrCredential(cmd *cobra.Command, flagName, credentialKey string) string
 }
 
 // buildPollersFromConfig constructs authenticated platform pollers from keychain/config.
+// Parent `bbscope poll` and `daemon` have no per-platform credential flags;
+// subcommands use flagOrCredential (flag > keychain > config).
 // platformFilter is a set of short names (h1, bc, it, ywh, immunefi, dev). Empty/nil means all.
 // Returns an error if the proxy configuration is invalid, matching the
 // single-platform poll subcommands, which also treat a bad --proxy as fatal.
@@ -139,18 +141,8 @@ func parsePlatformFilter(input string) map[string]bool {
 	}
 	out := make(map[string]bool)
 	for _, part := range strings.Split(input, ",") {
-		part = strings.TrimSpace(part)
-		switch part {
-		case "hackerone":
-			part = "h1"
-		case "bugcrowd":
-			part = "bc"
-		case "intigriti":
-			part = "it"
-		case "yeswehack":
-			part = "ywh"
-		}
-		if part != "" {
+		part = platforms.CanonicalName(part)
+		if part != "" && part != "all" {
 			out[part] = true
 		}
 	}

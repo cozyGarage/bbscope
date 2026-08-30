@@ -34,6 +34,10 @@ func (d *DiscordNotifier) Send(ctx context.Context, event ChangeEvent) error {
 		return nil
 	}
 
+	if err := webhookURLAllowed(d.config.WebhookURL); err != nil {
+		return fmt.Errorf("discord webhook destination: %w", err)
+	}
+
 	message := formatDiscordMessage(event, d.config)
 	payload, err := json.Marshal(message)
 	if err != nil {
@@ -103,7 +107,7 @@ func formatDiscordMessage(event ChangeEvent, cfg *DiscordConfig) discordMessage 
 
 	username := "bbscope"
 	if cfg.Username != "" {
-		username = cfg.Username
+		username = escapeNotifierUsername(cfg.Username)
 	}
 
 	var scopeStatus string
@@ -120,7 +124,7 @@ func formatDiscordMessage(event ChangeEvent, cfg *DiscordConfig) discordMessage 
 		bountyStatus = "🎁 No Bounty"
 	}
 
-	title := fmt.Sprintf("%s Scope Change on %s", emoji, event.Platform)
+	title := fmt.Sprintf("%s Scope Change on %s", emoji, escapeDiscordMarkdown(event.Platform))
 	description := fmt.Sprintf("**Target:** `%s`", escapeDiscordInlineCode(event.Target))
 
 	embed := discordEmbed{

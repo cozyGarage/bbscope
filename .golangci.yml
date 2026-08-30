@@ -20,12 +20,12 @@ linters:
       excludes:
         - G104 # Audit errors not checked (handled case by case)
         - G101 # "credential" constants are keychain key names, not secrets
-        - G115
-        - G201
-        - G204
-        - G304
-        - G402
-        - G505
+        - G115 # Integer overflow conversions (TOTP time step, HTTP status)
+        - G201 # SQL string formatting — builders use parameterized placeholders only
+        - G204 # Subprocess (db shell launches psql with a validated DSN)
+        - G304 # File path from flags (pid-file, import) is expected
+        - G402 # TLS skip is opt-in (--proxy / ai.insecure_skip_verify)
+        - G505 # SHA-1 is required for classic TOTP (RFC 6238)
         # CREATE DATABASE uses validateDatabaseName + pgx.Identifier.Sanitize.
         - G701
       config:

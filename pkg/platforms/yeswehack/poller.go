@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -98,8 +99,9 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 }
 
 func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts platforms.PollOptions) (scope.ProgramData, error) {
-	programAPIURL := apiBaseURL + "/programs/" + handle
-	programWebURL := "https://yeswehack.com/programs/" + handle
+	escaped := url.PathEscape(handle)
+	programAPIURL := apiBaseURL + "/programs/" + escaped
+	programWebURL := "https://yeswehack.com/programs/" + escaped
 	pData := scope.ProgramData{Url: programWebURL}
 
 	res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{

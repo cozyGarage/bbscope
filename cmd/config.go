@@ -152,11 +152,9 @@ var configMigrateCmd = &cobra.Command{
 	Long: `Migrate all credentials from the config file to the OS keychain.
 
 This command reads credentials from ~/.bbscope.yaml and stores them
-securely in your OS keychain. The config file values are preserved
-but will no longer be used once they're in the keychain.
-
-After migration, you can manually remove the credentials from the
-config file for extra security.`,
+securely in your OS keychain. Values already in the keychain win at
+read time, but the YAML file is not rewritten. Delete the plaintext
+keys from the config file yourself after a successful migrate.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("Migrating credentials to OS keychain...")
 		fmt.Println()
@@ -189,8 +187,8 @@ config file for extra security.`,
 
 		if migrated > 0 {
 			fmt.Println()
-			fmt.Println("You can now remove these credentials from ~/.bbscope.yaml")
-			fmt.Println("for extra security. bbscope will use the keychain instead.")
+			fmt.Println("Keychain now shadows these keys, but ~/.bbscope.yaml was not edited.")
+			fmt.Println("Delete the plaintext values from the config file; they remain readable on disk until you do.")
 		}
 
 		if failed > 0 {

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"strings"
@@ -38,7 +39,10 @@ type WHTTPRes struct {
 	Headers        http.Header
 }
 
-var retryClient *retryablehttp.Client
+// baseClient is the unproxied default and is never mutated after init.
+// activeClient is swapped atomically when SetupProxy clones a proxied client.
+var baseClient *retryablehttp.Client
+var activeClient atomic.Pointer[retryablehttp.Client]
 var GlobalDebug bool
 
 // maxResponseBytes caps how much of a response body we read into memory to
@@ -56,19 +60,19 @@ var sensitiveHeaders = []string{
 	"x-auth-token",
 }
 
+func newRetryClient() *retryablehttp.Client {
+	c := retryablehttp.NewClient()
+	c.RetryMax = 10
+	c.HTTPClient.Timeout = 30 * time.Second
+	c.RetryWaitMin = 1 * time.Second
+	c.RetryWaitMax = 30 * time.Second
+	c.Logger = log.New(io.Discard, "", 0)
+	return c
+}
+
 func init() {
-	retryClient = retryablehttp.NewClient()
-	retryClient.RetryMax = 10 // Reasonable retry limit to avoid infinite loops
-
-	// Default timeout to 30 seconds
-	retryClient.HTTPClient.Timeout = 30 * time.Second
-
-	// Configure retry timing
-	retryClient.RetryWaitMin = 1 * time.Second
-	retryClient.RetryWaitMax = 30 * time.Second
-
-	// Don't print debug messages
-	retryClient.Logger = log.New(io.Discard, "", 0)
+	baseClient = newRetryClient()
+	activeClient.Store(baseClient)
 }
 
 // isSensitiveHeader checks if a header should be redacted in debug output
@@ -109,13 +113,16 @@ func redactDebugBody(body string) string {
 }
 
 func GetDefaultClient() *retryablehttp.Client {
-	return retryClient
+	if c := activeClient.Load(); c != nil {
+		return c
+	}
+	return baseClient
 }
 
 func SendHTTPRequest(wReq *WHTTPReq, customClient *retryablehttp.Client) (wRes *WHTTPRes, err error) {
 	client := customClient
 	if client == nil {
-		client = retryClient // Use the default client
+		client = GetDefaultClient()
 	}
 
 	var req *retryablehttp.Request
@@ -211,8 +218,12 @@ func SendHTTPRequest(wReq *WHTTPReq, customClient *retryablehttp.Client) (wRes *
 	return wRes, nil
 }
 
+// SetupProxy installs a cloned HTTP client that routes through proxyURL.
+// The unproxied default client is never mutated. An empty proxyURL restores
+// the unproxied default (useful in tests and when clearing a previous proxy).
 func SetupProxy(proxyURL string) error {
 	if proxyURL == "" {
+		activeClient.Store(baseClient)
 		return nil
 	}
 
@@ -239,8 +250,9 @@ func SetupProxy(proxyURL string) error {
 		base.TLSClientConfig = cloned
 	}
 
-	client := GetDefaultClient()
+	client := newRetryClient()
 	client.HTTPClient.Transport = base
+	activeClient.Store(client)
 	return nil
 }
 

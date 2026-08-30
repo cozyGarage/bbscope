@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
@@ -361,11 +362,9 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 	// poller that starts returning blank targets — the shape of a platform markup
 	// change — would otherwise clear the guard and have every existing target
 	// collected into toRemove and deleted.
-	usableEntries := 0
-	for _, e := range entries {
-		if identityKey(e.TargetRaw, e.Category) != "" {
-			usableEntries++
-		}
+	usableEntries, dupes := uniqueIdentityStats(entries)
+	if dupes > 0 {
+		utils.Log.Warnf("storage: dropped %d duplicate identity key(s) in upsert for %s (first entry wins)", dupes, programURL)
 	}
 	if usableEntries == 0 && len(existingMap) > 0 {
 		return nil, ErrAbortingScopeWipe

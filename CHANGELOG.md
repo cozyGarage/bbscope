@@ -10,6 +10,18 @@ higher-level, human-curated changes.
 ## [Unreleased]
 
 ### Added
+- Code review playbook and subsystem checklists in `docs/CODE_REVIEW.md`; PR template links to them.
+- Shared platform alias map (`pkg/platforms.CanonicalName` / `MatchingNames`) used by poll filters, `db --platform`, and `validate.Platform`.
+- Webhook destination policy: `http`/`https` only, reject cloud-metadata and link-local IPs, allow loopback.
+
+### Changed
+- `whttp.SetupProxy` clones a client instead of mutating the process-global transport.
+- `bbscope daemon` authenticates pollers once at startup and reuses them; re-auth only on auth-like errors.
+- HackerOne, YesWeHack, and Intigriti interpolate `url.PathEscape`d handles/ids into request paths.
+- Duplicate identity keys in one upsert payload log a warning (first entry wins).
+- Slack/Discord notification titles and usernames are escaped like other untrusted fields.
+
+### Added
 - `db get domains|urls|ips|cidrs` now support a `--platform` filter (previously
   only `wildcards` did).
 - Schema migration framework (`schema_migrations` table) so database schema
@@ -22,6 +34,11 @@ higher-level, human-curated changes.
 - Dependabot configuration and a Codecov coverage gate.
 - Project meta: `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.editorconfig`, issue and
   pull-request templates.
+- Code review playbook and subsystem checklists in `docs/CODE_REVIEW.md`.
+- Shared platform alias map (`pkg/platforms.CanonicalName` / `MatchingNames`)
+  used by poll filters, `db --platform`, and `validate.Platform`.
+- Webhook destination policy: `http`/`https` only; reject cloud-metadata and
+  link-local IPs; allow loopback.
 
 ### Changed
 - Polling now honors context cancelation (Ctrl-C stops in-flight work).
@@ -37,6 +54,15 @@ higher-level, human-curated changes.
   `golangci-lint` in CI for reproducible linting.
 - Platform poller fixtures live under `testdata/`; `MockPoller` implements
   `PlatformPoller` for `cmd/poll` orchestration tests.
+- `whttp.SetupProxy` clones a client instead of mutating the process-global
+  transport.
+- `bbscope daemon` authenticates pollers once at startup and reuses them;
+  re-auth only on auth-like errors.
+- HackerOne, YesWeHack, and Intigriti interpolate `url.PathEscape`d handles
+  into request paths.
+- Duplicate identity keys in one upsert payload log a warning (first entry wins).
+- Slack/Discord notification titles and usernames are escaped like other
+  untrusted fields.
 
 ### Fixed
 - `db get domains` no longer emits IP addresses or CIDR/IP ranges as domains.

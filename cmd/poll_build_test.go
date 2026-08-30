@@ -22,6 +22,10 @@ func TestParsePlatformFilter(t *testing.T) {
 	if got["ywh"] {
 		t.Fatalf("ywh should not be present: %v", got)
 	}
+	got = parsePlatformFilter("yeswehack,immunefi")
+	if !got["ywh"] || !got["immunefi"] {
+		t.Fatalf("long names should canonicalize: %v", got)
+	}
 }
 
 func TestBuildPollersFromConfigFailsFastOnBadProxy(t *testing.T) {

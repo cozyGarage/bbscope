@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
@@ -275,6 +276,23 @@ func identityKey(raw, category string) string {
 	return raw + "|" + category
 }
 
+func uniqueIdentityStats(entries []UpsertEntry) (unique, duplicates int) {
+	seen := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		key := identityKey(e.TargetRaw, e.Category)
+		if key == "" {
+			continue
+		}
+		if seen[key] {
+			duplicates++
+			continue
+		}
+		seen[key] = true
+		unique++
+	}
+	return unique, duplicates
+}
+
 // shouldAbortPartialSync reports whether a sync would disable an implausibly
 // large share of a platform's active programs, which signals a partial or failed
 // poll rather than genuine removals.
@@ -308,17 +326,20 @@ func shouldAbortPartialSync(activeCount, removeCount int) bool {
 }
 
 // splitPlatformList parses a comma-separated --platform filter (e.g. "h1,bc")
-// into its lowercased, trimmed components; "all" and empty entries are dropped
-// since they mean "no filter".
+// into canonical names plus long aliases so `--platform bugcrowd` matches rows
+// stored as `bc`. "all" and empty entries are dropped since they mean "no filter".
 func splitPlatformList(input string) []string {
 	parts := strings.Split(input, ",")
+	seen := make(map[string]bool)
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
-		p = strings.TrimSpace(strings.ToLower(p))
-		if p == "" || p == "all" {
-			continue
+		for _, name := range platforms.MatchingNames(p) {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
 		}
-		out = append(out, p)
 	}
 	return out
 }

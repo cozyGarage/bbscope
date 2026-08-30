@@ -124,8 +124,9 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 }
 
 func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts platforms.PollOptions) (scope.ProgramData, error) {
-	pData := scope.ProgramData{Url: "https://hackerone.com/" + handle}
-	currentPageURL := apiBaseURL + "/v1/hackers/programs/" + handle + "/structured_scopes?page%5Bnumber%5D=1&page%5Bsize%5D=100"
+	escaped := url.PathEscape(handle)
+	pData := scope.ProgramData{Url: "https://hackerone.com/" + escaped}
+	currentPageURL := apiBaseURL + "/v1/hackers/programs/" + escaped + "/structured_scopes?page%5Bnumber%5D=1&page%5Bsize%5D=100"
 	categoryStrings := scope.GetAllStringsForCategories(opts.Categories)
 
 	const maxScopeRetries = 3

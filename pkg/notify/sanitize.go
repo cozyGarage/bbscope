@@ -1,9 +1,16 @@
 package notify
 
 import (
+	"errors"
 	"html"
+	"net"
 	"net/url"
 	"strings"
+)
+
+var (
+	errInvalidWebhookURL  = errors.New("webhook URL must be http or https without userinfo")
+	errMetadataWebhookURL = errors.New("webhook URL must not target cloud metadata or link-local addresses")
 )
 
 // sanitizeHeaderField strips CR/LF so untrusted values cannot inject email headers.
@@ -110,6 +117,52 @@ func neutralizeDiscordMentions(s string) string {
 	s = strings.ReplaceAll(s, "@here", "@\u200bhere")
 	s = strings.ReplaceAll(s, "<@", "<@\u200b")
 	return s
+}
+
+// escapeNotifierUsername sanitizes a configurable Slack/Discord username.
+func escapeNotifierUsername(s string) string {
+	s = sanitizeHeaderField(s)
+	return neutralizeDiscordMentions(s)
+}
+
+// webhookURLAllowed reports whether an operator-configured webhook destination
+// is safe to POST to. Loopback is allowed (local ntfy/gotify). Cloud metadata
+// and other link-local addresses are not.
+func webhookURLAllowed(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return err
+	}
+	if u.Host == "" || u.User != nil {
+		return errInvalidWebhookURL
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
+		return errInvalidWebhookURL
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "metadata.google.internal" || host == "metadata.google.internal." {
+		return errMetadataWebhookURL
+	}
+	ip := net.ParseIP(host)
+	if ip != nil && isBlockedWebhookIP(ip) {
+		return errMetadataWebhookURL
+	}
+	return nil
+}
+
+func isBlockedWebhookIP(ip net.IP) bool {
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	if ip.Equal(net.ParseIP("169.254.169.254")) {
+		return true
+	}
+	if ip.Equal(net.ParseIP("fd00:ec2::254")) {
+		return true
+	}
+	return false
 }
 
 // escapeSlackText escapes Slack mrkdwn's reserved characters. Escaping "<"
