@@ -24,6 +24,7 @@ higher-level, human-curated changes.
 - Duplicate identity keys in one upsert payload log a warning (first entry wins).
 - Slack/Discord notification titles and usernames are escaped like other untrusted fields.
 - Docker CI always loads the image locally so Trivy can scan it, then pushes to GHCR on non-PR events.
+- Trivy GitHub Action is pinned to the `v0.36.0` commit SHA.
 - GoReleaser GitHub Action is pinned to `~> v2` (release + `goreleaser check`).
 - `make test` / coverage use `-covermode=atomic`.
 
