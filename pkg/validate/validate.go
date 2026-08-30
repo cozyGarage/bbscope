@@ -92,6 +92,11 @@ func URL(rawURL string) error {
 	if parsed.Scheme == "" {
 		return &ValidationError{Field: "url", Value: rawURL, Message: "missing scheme (http/https)"}
 	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return &ValidationError{Field: "url", Value: rawURL, Message: "scheme must be http or https"}
+	}
 	if parsed.Host == "" {
 		return &ValidationError{Field: "url", Value: rawURL, Message: "missing host"}
 	}

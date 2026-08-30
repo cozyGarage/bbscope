@@ -103,13 +103,13 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	// Output based on format
 	switch format {
 	case "json":
-		outputDiffJSON(filtered)
+		return outputDiffJSON(filtered)
 	case "csv":
-		outputDiffCSV(filtered)
+		return outputDiffCSV(filtered)
 	default:
 		outputDiffText(filtered, from, to)
+		return nil
 	}
-	return nil
 }
 
 // parseDiffTo resolves the --to flag. A bare YYYY-MM-DD parses to midnight, so
@@ -168,7 +168,7 @@ type diffEntry struct {
 	Time     string `json:"time"`
 }
 
-func outputDiffJSON(changes []storage.Change) {
+func outputDiffJSON(changes []storage.Change) error {
 	// Built with encoding/json rather than Printf: a quote or backslash in a
 	// target or program URL used to produce invalid JSON.
 	out := make([]diffEntry, 0, len(changes))
@@ -186,11 +186,12 @@ func outputDiffJSON(changes []storage.Change) {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(out); err != nil {
-		utils.Log.Errorf("Could not encode diff as JSON: %v", err)
+		return fmt.Errorf("encoding diff as JSON: %w", err)
 	}
+	return nil
 }
 
-func outputDiffCSV(changes []storage.Change) {
+func outputDiffCSV(changes []storage.Change) error {
 	// encoding/csv rather than the previous hand-rolled escaper, which handled
 	// commas and quotes but not embedded newlines.
 	w := csv.NewWriter(os.Stdout)
@@ -210,8 +211,9 @@ func outputDiffCSV(changes []storage.Change) {
 	}
 
 	if err := w.WriteAll(records); err != nil {
-		utils.Log.Errorf("Could not write diff as CSV: %v", err)
+		return fmt.Errorf("writing diff as CSV: %w", err)
 	}
+	return w.Error()
 }
 
 func init() {

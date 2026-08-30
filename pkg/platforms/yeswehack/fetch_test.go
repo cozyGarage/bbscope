@@ -90,6 +90,18 @@ func TestListProgramHandles_MissingItems(t *testing.T) {
 	}
 }
 
+func TestFetchProgramScope_MissingOutOfScope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"scopes":[{"scope":"api.example.com"}]}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	if _, err := NewPoller("tok").FetchProgramScope(context.Background(), "acme", platforms.PollOptions{}); err == nil {
+		t.Fatal("expected an error when the program body has no out_of_scope array")
+	}
+}
+
 func TestFetchProgramScope_MissingScopes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"name":"acme"}`)

@@ -95,7 +95,6 @@ func exportJSON(entries []storage.Entry) error {
 
 func exportCSV(entries []storage.Entry) error {
 	writer := csv.NewWriter(os.Stdout)
-	defer writer.Flush()
 
 	// Header
 	header := []string{
@@ -141,7 +140,8 @@ func exportCSV(entries []storage.Entry) error {
 		}
 	}
 
-	return nil
+	writer.Flush()
+	return writer.Error()
 }
 
 func init() {

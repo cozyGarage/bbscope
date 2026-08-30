@@ -108,6 +108,32 @@ func TestFetchProgramScope(t *testing.T) {
 	}
 }
 
+func TestFetchProgramScope_BountyOnlyKeepsEarlierOOS(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits == 1 {
+			_, _ = fmt.Fprintf(w, `{"data":[{"attributes":{"asset_type":"URL","asset_identifier":"oos.example.com","eligible_for_submission":false,"eligible_for_bounty":false}}],"links":{"next":%q}}`, "http://"+r.Host+"/page2")
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":[{"attributes":{"asset_type":"URL","asset_identifier":"in.example.com","eligible_for_submission":true,"eligible_for_bounty":true}}],"links":{}}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := NewPoller("user", "token")
+	pd, err := p.FetchProgramScope(context.Background(), "acme", platforms.PollOptions{Categories: "all", BountyOnly: true})
+	if err != nil {
+		t.Fatalf("FetchProgramScope: %v", err)
+	}
+	if len(pd.InScope) != 1 || pd.InScope[0].Target != "in.example.com" {
+		t.Fatalf("in-scope = %+v", pd.InScope)
+	}
+	if len(pd.OutOfScope) != 1 || pd.OutOfScope[0].Target != "oos.example.com" {
+		t.Fatalf("OOS from page 1 was dropped: %+v", pd.OutOfScope)
+	}
+}
+
 func TestFetchProgramScope_Non200WithData(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

@@ -48,8 +48,8 @@ func (e *EmailNotifier) Send(ctx context.Context, event ChangeEvent) error {
 		"Content-Type: text/html; charset=\"UTF-8\";\r\n"+
 		"\r\n"+
 		"%s\r\n",
-		e.config.From,
-		e.config.To[0], // Primary recipient
+		sanitizeHeaderField(e.config.From),
+		sanitizeHeaderField(e.config.To[0]),
 		subject,
 		body,
 	)

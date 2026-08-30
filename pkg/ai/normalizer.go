@@ -576,8 +576,10 @@ func variantHost(s string) string {
 	if idx := strings.IndexAny(s, "/?#"); idx >= 0 {
 		s = s[:idx]
 	}
-	if at := strings.LastIndex(s, "@"); at >= 0 {
-		s = s[at+1:]
+	// Userinfo is not a hostname. Taking the substring after "@" let
+	// evil.com@example.com pass as example.com.
+	if strings.Contains(s, "@") {
+		return ""
 	}
 	if i := strings.LastIndex(s, ":"); i >= 0 && !strings.Contains(s, "]") {
 		s = s[:i]
@@ -647,6 +649,9 @@ func cleanScopeBase(original string) string {
 	s = strings.TrimPrefix(s, "http://")
 	if idx := strings.IndexAny(s, "/?#"); idx >= 0 {
 		s = s[:idx]
+	}
+	if at := strings.LastIndex(s, "@"); at >= 0 {
+		s = s[at+1:]
 	}
 	s = strings.ReplaceAll(s, "*.", "")
 	s = strings.ReplaceAll(s, ".*", "")

@@ -204,6 +204,31 @@ func TestGetProgramHandles_WAFBanned(t *testing.T) {
 	}
 }
 
+func TestGetProgramHandles_MissingTotalCountKeepsPaging(t *testing.T) {
+	var page int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page++
+		switch page {
+		case 1:
+			_, _ = io.WriteString(w, `{"engagements":[{"briefUrl":"/one","accessStatus":"open"}],"paginationMeta":{}}`)
+		case 2:
+			_, _ = io.WriteString(w, `{"engagements":[{"briefUrl":"/two","accessStatus":"open"}],"paginationMeta":{}}`)
+		default:
+			_, _ = io.WriteString(w, `{"engagements":[]}`)
+		}
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	got, err := GetProgramHandles("tok", "bug_bounty", false)
+	if err != nil {
+		t.Fatalf("GetProgramHandles: %v", err)
+	}
+	if !equal(got, []string{"/one", "/two"}) {
+		t.Fatalf("handles = %v, want [/one /two] (missing totalCount must not stop after page 1)", got)
+	}
+}
+
 func TestGetProgramHandles_Non2xxAndHTML(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

@@ -81,6 +81,9 @@ func parseTOTPSecret(s string) ([]byte, int, int, func() hash.Hash, error) {
 		if err != nil {
 			return nil, 0, 0, nil, err
 		}
+		if typ := strings.ToLower(u.Host); typ != "totp" {
+			return nil, 0, 0, nil, fmt.Errorf("unsupported OTP type %q (only totp is supported)", typ)
+		}
 		q := u.Query()
 		sec := q.Get("secret")
 		digits := 6

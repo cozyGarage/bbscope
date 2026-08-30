@@ -269,6 +269,52 @@ func TestIntegration_ImportRestoresLifecycleAndAIVariants(t *testing.T) {
 	}
 }
 
+func TestIntegration_ImportClearsIgnoredFlag(t *testing.T) {
+	db, raw := openRoundtripDB(t)
+	ctx := context.Background()
+	platform := "itest_unignore_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	programURL := "https://example.com/" + platform + "/a"
+
+	cleanup := func() {
+		_, _ = raw.ExecContext(ctx, `DELETE FROM targets_raw WHERE program_id IN (SELECT id FROM programs WHERE platform = $1)`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM programs WHERE platform = $1`, platform)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	built, err := storage.BuildEntries(programURL, platform, "a", []storage.TargetItem{
+		{URI: "keep.example.com", Category: "url", InScope: true},
+	})
+	if err != nil {
+		t.Fatalf("BuildEntries: %v", err)
+	}
+	if _, err := db.UpsertProgramEntriesWithOptions(ctx, programURL, platform, "a", built,
+		storage.UpsertOptions{SkipChangeLog: true}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+	if err := db.SetProgramLifecycle(ctx, programURL, false, true); err != nil {
+		t.Fatalf("SetProgramLifecycle: %v", err)
+	}
+
+	imported, failed := importEntries(ctx, db, []storage.Entry{{
+		ProgramURL: programURL, Platform: platform, Handle: "a",
+		TargetRaw: "keep.example.com", Category: "url", InScope: true,
+	}}, false)
+	if failed != 0 || imported != 1 {
+		t.Fatalf("import: imported=%d failed=%d", imported, failed)
+	}
+
+	progs, err := db.ListPrograms(ctx)
+	if err != nil {
+		t.Fatalf("ListPrograms: %v", err)
+	}
+	for _, p := range progs {
+		if p.Platform == platform && p.IsIgnored {
+			t.Fatal("import left is_ignored set after a backup without the flag")
+		}
+	}
+}
+
 func TestIntegration_ImportMergesWithoutDeletingLiveTargets(t *testing.T) {
 	db, raw := openRoundtripDB(t)
 	ctx := context.Background()

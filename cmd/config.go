@@ -105,6 +105,10 @@ Example:
 		if err := credentials.Delete(key); err != nil {
 			return fmt.Errorf("failed to delete credential: %w", err)
 		}
+		if credentials.Get(key) != "" {
+			cmd.SilenceUsage = true
+			return fmt.Errorf("%s was removed from the keychain but is still present in the config file; delete it from the config or it will keep being used", key)
+		}
 
 		fmt.Printf("✓ Deleted %s from OS keychain\n", key)
 		return nil

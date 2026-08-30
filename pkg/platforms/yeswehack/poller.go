@@ -117,6 +117,9 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 	if !gjson.Get(res.BodyString, "scopes").Exists() {
 		return pData, fmt.Errorf("yeswehack: program %s response missing scopes", handle)
 	}
+	if !gjson.Get(res.BodyString, "out_of_scope").Exists() {
+		return pData, fmt.Errorf("yeswehack: program %s response missing out_of_scope", handle)
+	}
 
 	// Get the list of categories to filter by.
 	// If nil, we'll include all categories.
