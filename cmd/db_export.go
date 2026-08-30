@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -33,8 +34,22 @@ Examples:
 	RunE: runExport,
 }
 
+func normalizeExportFormat(format string) (string, error) {
+	f := strings.ToLower(strings.TrimSpace(format))
+	switch f {
+	case "json", "csv":
+		return f, nil
+	default:
+		return "", fmt.Errorf("unknown format: %s (use json or csv)", format)
+	}
+}
+
 func runExport(cmd *cobra.Command, args []string) error {
-	format, _ := cmd.Flags().GetString("format")
+	rawFormat, _ := cmd.Flags().GetString("format")
+	format, err := normalizeExportFormat(rawFormat)
+	if err != nil {
+		return err
+	}
 	platform, _ := cmd.Flags().GetString("platform")
 
 	// Open database
@@ -69,7 +84,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	case "csv":
 		return exportCSV(entries)
 	default:
-		return fmt.Errorf("unknown format: %s", format)
+		return fmt.Errorf("unknown format: %s (use json or csv)", format)
 	}
 }
 

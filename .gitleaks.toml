@@ -1,0 +1,14 @@
+# Working-tree secret scan used by CI (`gitleaks detect --no-git`).
+# Test fixtures and docs intentionally contain dummy passwords and RFC 6238
+# OTP examples; those paths are allowlisted so the scan stays high-signal.
+
+title = "bbscope"
+
+[allowlist]
+description = "Tests, docs, and this config"
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''_test\.go$''',
+  '''docs/''',
+  '''testdata/''',
+]
