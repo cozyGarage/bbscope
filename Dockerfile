@@ -20,7 +20,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-w -s" -o bbscope main.go
 
 # Start a new stage from scratch for a smaller, more secure image
-FROM alpine:3.19
+FROM alpine:3.24
 
 # Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates
