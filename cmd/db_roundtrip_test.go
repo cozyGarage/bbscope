@@ -122,7 +122,7 @@ func TestIntegration_ExportImportRoundTrip(t *testing.T) {
 				t.Fatalf("parsing %s dump: %v", format, err)
 			}
 
-			imported, failed := importEntries(ctx, db, parsed)
+			imported, failed := importEntries(ctx, db, parsed, false)
 			if failed != 0 {
 				t.Fatalf("%d entries failed to import", failed)
 			}
@@ -229,7 +229,7 @@ func TestIntegration_ImportRestoresLifecycleAndAIVariants(t *testing.T) {
 	}
 
 	cleanup()
-	imported, failed := importEntries(ctx, db, exported)
+	imported, failed := importEntries(ctx, db, exported, false)
 	if failed != 0 {
 		t.Fatalf("import failed: imported=%d failed=%d", imported, failed)
 	}
@@ -266,5 +266,63 @@ func TestIntegration_ImportRestoresLifecycleAndAIVariants(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("AI variant was not restored: %#v", enh)
+	}
+}
+
+func TestIntegration_ImportMergesWithoutDeletingLiveTargets(t *testing.T) {
+	db, raw := openRoundtripDB(t)
+	ctx := context.Background()
+	platform := "itest_importmerge_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	programURL := "https://example.com/" + platform + "/a"
+
+	cleanup := func() {
+		_, _ = raw.ExecContext(ctx, `DELETE FROM targets_ai_enhanced WHERE target_id IN (
+			SELECT tr.id FROM targets_raw tr JOIN programs p ON tr.program_id = p.id WHERE p.platform = $1)`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM targets_raw WHERE program_id IN (SELECT id FROM programs WHERE platform = $1)`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM scope_changes WHERE platform = $1`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM programs WHERE platform = $1`, platform)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	items := []storage.TargetItem{
+		{URI: "keep.example.com", Category: "url", InScope: true},
+		{URI: "live.example.com", Category: "url", InScope: true},
+	}
+	built, err := storage.BuildEntries(programURL, platform, "a", items)
+	if err != nil {
+		t.Fatalf("BuildEntries: %v", err)
+	}
+	if _, err := db.UpsertProgramEntriesWithOptions(ctx, programURL, platform, "a", built,
+		storage.UpsertOptions{SkipChangeLog: true}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	partial := []storage.Entry{{
+		ProgramURL: programURL, Platform: platform, Handle: "a",
+		TargetRaw: "keep.example.com", Category: "url", InScope: true,
+	}}
+	if imported, failed := importEntries(ctx, db, partial, false); failed != 0 || imported != 1 {
+		t.Fatalf("merge import: imported=%d failed=%d", imported, failed)
+	}
+
+	opts := storage.ListOptions{Platform: platform, IncludeOOS: true}
+	got, err := db.ListEntries(ctx, opts)
+	if err != nil {
+		t.Fatalf("ListEntries: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("merge import wiped a live target: got %d entries", len(got))
+	}
+
+	if imported, failed := importEntries(ctx, db, partial, true); failed != 0 || imported != 1 {
+		t.Fatalf("replace import: imported=%d failed=%d", imported, failed)
+	}
+	got, err = db.ListEntries(ctx, opts)
+	if err != nil {
+		t.Fatalf("ListEntries after replace: %v", err)
+	}
+	if len(got) != 1 || got[0].TargetRaw != "keep.example.com" {
+		t.Fatalf("replace import should leave only the file contents, got %#v", got)
 	}
 }

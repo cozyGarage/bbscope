@@ -77,6 +77,8 @@ func TestListProgramHandles(t *testing.T) {
 	want := []string{
 		srv.URL + "/bug-bounty/acme/information/",
 		srv.URL + "/bug-bounty/beta/information/",
+		srv.URL + "/bug-bounty/gamma/information/",
+		srv.URL + "/bug-bounty/delta/information/",
 	}
 	if !equal(got, want) {
 		t.Fatalf("handles = %v, want %v", got, want)
@@ -102,8 +104,18 @@ func TestFetchProgramScope(t *testing.T) {
 	if pd.Url != handle {
 		t.Errorf("Url = %q, want %q", pd.Url, handle)
 	}
-	if len(pd.InScope) != 2 {
-		t.Fatalf("expected 2 assets, got %+v", pd.InScope)
+	if len(pd.InScope) != 4 {
+		t.Fatalf("expected 4 assets, got %+v", pd.InScope)
+	}
+	gotTypes := map[string]string{}
+	for _, el := range pd.InScope {
+		gotTypes[el.Target] = el.Category
+	}
+	if gotTypes["cosmos1xyz"] != "blockchain_dlt" {
+		t.Errorf("blockchain asset category = %q", gotTypes["cosmos1xyz"])
+	}
+	if gotTypes["future.example"] != "something_new" {
+		t.Errorf("unknown asset type should still be in scope, got %q", gotTypes["future.example"])
 	}
 
 	pd, err = p.FetchProgramScope(context.Background(), handle, platforms.PollOptions{Categories: "web"})
@@ -157,6 +169,20 @@ func TestFetchWithRetry_HonorsCancel(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+}
+
+func TestListProgramHandles_NoIdentifiers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `"bounties":[{"inviteOnly":false},{"name":"acme"}]`)
+	}))
+	defer srv.Close()
+	withTestTransport(t, srv.URL)
+
+	p := &Poller{}
+	_, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{})
+	if err == nil {
+		t.Fatal("expected error when listing objects have no slug, url, or id")
 	}
 }
 

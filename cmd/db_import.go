@@ -32,7 +32,10 @@ Examples:
   bbscope db import --file targets.csv --format csv
 
   # Import from stdin
-  cat backup.json | bbscope db import --format json`,
+  cat backup.json | bbscope db import --format json
+
+  # Replace a program's stored scope with the file (default is merge)
+  bbscope db import --file backup.json --replace`,
 	RunE: runImport,
 }
 
@@ -86,7 +89,8 @@ func runImport(cmd *cobra.Command, args []string) error {
 		ctx = context.Background()
 	}
 
-	imported, failed := importEntries(ctx, db, entries)
+	replace, _ := cmd.Flags().GetBool("replace")
+	imported, failed := importEntries(ctx, db, entries, replace)
 
 	fmt.Printf("Successfully imported %d targets.\n", imported)
 	if failed > 0 {
@@ -115,7 +119,11 @@ type programFlags struct {
 // survive. AI-variant export rows (source=ai) are folded back onto their
 // raw target instead of being inserted as extra targets. Change logging is
 // suppressed: restoring a backup is not a scope change.
-func importEntries(ctx context.Context, db *storage.DB, entries []storage.Entry) (imported, failed int) {
+//
+// By default the upsert is merge-only: targets present in the file are
+// added or updated, but targets (and AI variants) that the file omits are
+// left alone. --replace restores the older reconcile behavior.
+func importEntries(ctx context.Context, db *storage.DB, entries []storage.Entry, replace bool) (imported, failed int) {
 	order, grouped, flags := groupEntriesForImport(entries)
 
 	for _, key := range order {
@@ -128,7 +136,7 @@ func importEntries(ctx context.Context, db *storage.DB, entries []storage.Entry)
 		}
 		if _, err := db.UpsertProgramEntriesWithOptions(
 			ctx, key.url, key.platform, key.handle, built,
-			storage.UpsertOptions{SkipChangeLog: true},
+			storage.UpsertOptions{SkipChangeLog: true, MergeOnly: !replace},
 		); err != nil {
 			fmt.Fprintf(os.Stderr, "Error importing program %s: %v\n", key.url, err)
 			failed += len(items)
@@ -391,4 +399,5 @@ func init() {
 	dbCmd.AddCommand(importCmd)
 	importCmd.Flags().String("file", "", "Input file (default stdin)")
 	importCmd.Flags().String("format", "json", "Input format (json, csv)")
+	importCmd.Flags().Bool("replace", false, "Delete stored targets that are missing from the file (default merges)")
 }

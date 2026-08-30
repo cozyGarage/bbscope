@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func TestParsePlatformFilter(t *testing.T) {
@@ -29,6 +32,9 @@ func TestBuildPollersFromConfigFailsFastOnBadProxy(t *testing.T) {
 }
 
 func TestBuildPollersFromConfigOmitsDevUnlessRequested(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
 	pollers, err := buildPollersFromConfig(context.Background(), "", nil)
 	if err != nil {
 		t.Fatalf("unfiltered build: %v", err)
@@ -51,5 +57,24 @@ func TestBuildPollersFromConfigOmitsDevUnlessRequested(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("explicit dev filter should include the fixture poller")
+	}
+}
+
+func TestBuildPollersFromConfigAuthFailureIsError(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	viper.Set("bugcrowd.email", "user@example.com")
+	viper.Set("bugcrowd.password", "secret")
+	viper.Set("bugcrowd.otpsecret", "JBSWY3DPEHPK3PXP")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := buildPollersFromConfig(ctx, "", map[string]bool{"bc": true, "immunefi": true})
+	if err == nil {
+		t.Fatal("auth failure must fail the poll, even when Immunefi would still run")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }

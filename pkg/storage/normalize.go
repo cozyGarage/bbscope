@@ -50,9 +50,10 @@ func NormalizeProgramURL(s string) string {
 	}
 	if u, err := url.Parse(s); err == nil && u.Host != "" {
 		u.Host = strings.ToLower(u.Host)
-		if strings.HasSuffix(u.Path, "/") && len(u.Path) > 1 {
-			u.Path = strings.TrimRight(u.Path, "/")
-		}
+		// Strip a trailing slash, including a root-only "/". Leaving "/" in
+		// place made https://host and https://host/ different UNIQUE keys
+		// while lookup treated them as the same program.
+		u.Path = strings.TrimRight(u.Path, "/")
 		if u.Scheme == "" {
 			u.Scheme = "https"
 		}

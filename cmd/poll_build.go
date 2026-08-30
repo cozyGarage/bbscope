@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,6 +53,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 	}
 
 	var pollers []platforms.PlatformPoller
+	var authErrs []error
 
 	if allow("h1") {
 		h1User := credentials.Get("hackerone.username")
@@ -72,6 +74,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 			authCfg := platforms.AuthConfig{Email: bcEmail, Password: bcPass, OtpSecret: bcOTP, Proxy: proxyURL}
 			if err := bcPoller.Authenticate(ctx, authCfg); err != nil {
 				utils.Log.Errorf("Bugcrowd auth failed: %v", err)
+				authErrs = append(authErrs, fmt.Errorf("bugcrowd: %w", err))
 			} else {
 				pollers = append(pollers, bcPoller)
 			}
@@ -86,6 +89,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 			itPoller := itplatform.NewPoller()
 			if err := itPoller.Authenticate(ctx, platforms.AuthConfig{Token: itToken, Proxy: proxyURL}); err != nil {
 				utils.Log.Errorf("Intigriti auth failed: %v", err)
+				authErrs = append(authErrs, fmt.Errorf("intigriti: %w", err))
 			} else {
 				pollers = append(pollers, itPoller)
 			}
@@ -103,6 +107,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 			authCfg := platforms.AuthConfig{Email: ywhEmail, Password: ywhPass, OtpSecret: ywhOTP, Proxy: proxyURL}
 			if err := ywhPoller.Authenticate(ctx, authCfg); err != nil {
 				utils.Log.Errorf("YesWeHack auth failed: %v", err)
+				authErrs = append(authErrs, fmt.Errorf("yeswehack: %w", err))
 			} else {
 				pollers = append(pollers, ywhPoller)
 			}
@@ -122,7 +127,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 		pollers = append(pollers, &devplatform.Poller{})
 	}
 
-	return pollers, nil
+	return pollers, errors.Join(authErrs...)
 }
 
 // parsePlatformFilter converts a comma-separated platforms flag into a filter set.

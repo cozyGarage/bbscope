@@ -26,6 +26,9 @@ func NewPoller(token string) *Poller { return &Poller{token: token} }
 func (p *Poller) Name() string { return "ywh" }
 
 func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if cfg.Token != "" {
 		p.token = cfg.Token
 		return nil

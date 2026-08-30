@@ -25,6 +25,8 @@ func TestNormalizeProgramURL(t *testing.T) {
 	}{
 		{"https://HackerOne.com/foo/", "https://hackerone.com/foo"},
 		{"https://hackerone.com/foo", "https://hackerone.com/foo"},
+		{"https://hackerone.com/", "https://hackerone.com"},
+		{"https://hackerone.com", "https://hackerone.com"},
 		{"", ""},
 	}
 	for _, tc := range tests {

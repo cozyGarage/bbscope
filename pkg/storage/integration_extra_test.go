@@ -653,3 +653,78 @@ func TestIntegration_ListEntriesSinceUsesRawLastSeen(t *testing.T) {
 		t.Fatal("AI-joined row was dropped because --since used the stale AI timestamp")
 	}
 }
+
+func TestIntegration_UpsertMergeOnlyKeepsMissingTargets(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/merge"
+
+	seed := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: "keep.example.com", Category: "url", InScope: true},
+		{URI: "extra.example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", seed); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	partial := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: "keep.example.com", Category: "url", InScope: true},
+	})
+	changes, err := db.UpsertProgramEntriesWithOptions(ctx, programURL, platform, "a", partial, UpsertOptions{MergeOnly: true})
+	if err != nil {
+		t.Fatalf("merge-only upsert: %v", err)
+	}
+	for _, c := range changes {
+		if c.ChangeType == "removed" {
+			t.Fatalf("merge-only upsert removed %s", c.TargetRaw)
+		}
+	}
+
+	got, err := db.ListEntries(ctx, ListOptions{Platform: platform, IncludeOOS: true})
+	if err != nil {
+		t.Fatalf("ListEntries: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("merge-only upsert dropped a live target: got %d entries", len(got))
+	}
+}
+
+func TestIntegration_GetOrCreateProgramDoesNotStealURL(t *testing.T) {
+	db := openTestDB(t)
+	owner := uniquePlatform(t)
+	thief := uniquePlatform(t)
+	cleanupPlatform(t, db, owner)
+	cleanupPlatform(t, db, thief)
+	ctx := context.Background()
+	programURL := "https://example.com/" + owner + "/shared"
+
+	entries := mustBuildEntries(t, programURL, owner, "a", []TargetItem{
+		{URI: "api.example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, owner, "a", entries); err != nil {
+		t.Fatalf("owner upsert: %v", err)
+	}
+
+	stolen := mustBuildEntries(t, programURL, thief, "b", []TargetItem{
+		{URI: "evil.example.com", Category: "url", InScope: true},
+	})
+	_, err := db.UpsertProgramEntries(ctx, programURL, thief, "b", stolen)
+	if err == nil {
+		t.Fatal("expected upsert to refuse a URL owned by another platform")
+	}
+	if !errors.Is(err, ErrProgramURLOwned) {
+		t.Fatalf("error = %v, want ErrProgramURLOwned", err)
+	}
+
+	progs, err := db.ListPrograms(ctx)
+	if err != nil {
+		t.Fatalf("ListPrograms: %v", err)
+	}
+	for _, p := range progs {
+		if p.URL == NormalizeProgramURL(programURL) && p.Platform != owner {
+			t.Fatalf("program URL was stolen: %+v", p)
+		}
+	}
+}
