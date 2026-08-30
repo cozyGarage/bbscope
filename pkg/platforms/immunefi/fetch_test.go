@@ -2,6 +2,7 @@ package immunefi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -135,7 +136,7 @@ func TestFetchWithRetry_RateLimitThenOK(t *testing.T) {
 	defer srv.Close()
 	withTestTransport(t, srv.URL)
 
-	res, err := fetchWithRetry(srv.URL + "/")
+	res, err := fetchWithRetry(context.Background(), srv.URL+"/")
 	if err != nil {
 		t.Fatalf("fetchWithRetry: %v", err)
 	}
@@ -144,6 +145,18 @@ func TestFetchWithRetry_RateLimitThenOK(t *testing.T) {
 	}
 	if hits != 2 {
 		t.Fatalf("expected 2 hits, got %d", hits)
+	}
+}
+
+func TestFetchWithRetry_HonorsCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := fetchWithRetry(ctx, "http://127.0.0.1:1/")
+	if err == nil {
+		t.Fatal("expected a canceled context to stop retries")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
 

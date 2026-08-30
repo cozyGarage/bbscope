@@ -153,6 +153,8 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		notifier = nil
 	}
 
+	var runErrs []error
+
 	for _, p := range pollers {
 		utils.Log.Infof("Fetching scope from %s...", p.Name())
 
@@ -197,7 +199,11 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 
 		handles, err := p.ListProgramHandles(ctx, opts)
 		if err != nil {
-			return err
+			// A single platform's listing failure must not skip the rest of
+			// the poll (Immunefi after a down HackerOne, for example).
+			utils.Log.Warnf("Failed to list programs for %s: %v; skipping this platform", p.Name(), err)
+			runErrs = append(runErrs, fmt.Errorf("%s: %w", p.Name(), err))
+			continue
 		}
 
 		if isFirstRunForPlatform && len(handles) > 0 {
@@ -215,7 +221,8 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 			// for this platform to prevent wiping all its programs.
 			if len(handles) == 0 && dbProgramCount > 10 { // Using a threshold > 10
 				utils.Log.Errorf("Poller for %s returned 0 programs, but database has %d. Aborting sync for this platform to prevent data loss.", p.Name(), dbProgramCount)
-				continue // Skip to the next platform
+				runErrs = append(runErrs, fmt.Errorf("%s: poller returned 0 programs, database has %d", p.Name(), dbProgramCount))
+				continue
 			}
 		}
 
@@ -225,6 +232,7 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 			// Do not abort remaining platforms, and skip SyncPlatformPrograms: a partial
 			// success list would incorrectly disable programs that only failed to fetch.
 			utils.Log.Warnf("Some program fetches failed for %s: %v; skipping platform sync for this run", p.Name(), err)
+			runErrs = append(runErrs, fmt.Errorf("%s: %w", p.Name(), err))
 			continue
 		}
 
@@ -238,6 +246,8 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 				} else {
 					utils.Log.Warnf("Failed to sync removed programs for platform %s: %v", p.Name(), err)
 				}
+				runErrs = append(runErrs, fmt.Errorf("%s sync: %w", p.Name(), err))
+				continue
 			}
 			// SyncPlatformPrograms logs its own removals transactionally. On a
 			// platform's first run there is nothing in the database to remove, so
@@ -248,7 +258,7 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 			}
 		}
 	}
-	return nil
+	return errors.Join(runErrs...)
 }
 
 // processProgramsConcurrently processes programs using a worker pool pattern for concurrent fetching.

@@ -41,21 +41,31 @@ func TestRunPollWithPollers_PerProgramErrorContinues(t *testing.T) {
 	mock.FailOn = map[string]bool{"program1": true}
 	cmd := newOrchestrationTestCmd()
 
-	// Partial fetch failures are logged and skipped for platform sync; the
-	// overall run still returns nil so other platforms can proceed.
-	if err := runPollWithPollers(cmd, []platforms.PlatformPoller{mock}); err != nil {
-		t.Fatalf("runPollWithPollers should not abort on per-program errors: %v", err)
+	// Partial fetch failures skip platform sync but still fail the run so
+	// scripts can tell the poll was incomplete.
+	if err := runPollWithPollers(cmd, []platforms.PlatformPoller{mock}); err == nil {
+		t.Fatal("expected a per-program fetch failure to fail the run")
+	}
+	if got := len(mock.FetchedHandles()); got != len(mock.Handles) {
+		t.Fatalf("expected remaining programs to still be fetched, got %d", got)
 	}
 }
 
 func TestRunPollWithPollers_ListError(t *testing.T) {
-	mock := platforms.NewMockPoller("mock")
-	mock.ListError = errors.New("list failed")
+	failing := platforms.NewMockPoller("down")
+	failing.ListError = errors.New("list failed")
+	ok := platforms.NewMockPoller("ok")
 	cmd := newOrchestrationTestCmd()
 
-	err := runPollWithPollers(cmd, []platforms.PlatformPoller{mock})
+	err := runPollWithPollers(cmd, []platforms.PlatformPoller{failing, ok})
 	if err == nil {
-		t.Fatal("expected list error to abort the run")
+		t.Fatal("expected a list error to fail the run")
+	}
+	if got := len(ok.FetchedHandles()); got != len(ok.Handles) {
+		t.Fatalf("a list failure on one platform must not skip the others: fetched %d", got)
+	}
+	if got := len(failing.FetchedHandles()); got != 0 {
+		t.Fatalf("the failing platform should not have been fetched, got %d", got)
 	}
 }
 

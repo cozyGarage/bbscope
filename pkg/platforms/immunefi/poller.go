@@ -28,9 +28,12 @@ func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) err
 
 // fetchWithRetry sends an HTTP request with retry logic for 429 rate limits.
 // It will retry up to maxRetries times with exponential backoff.
-func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
+func fetchWithRetry(ctx context.Context, url string) (*whttp.WHTTPRes, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		res, err := whttp.SendHTTPRequest(
 			&whttp.WHTTPReq{
 				Method: "GET",
@@ -74,7 +77,7 @@ func fetchWithRetry(url string) (*whttp.WHTTPRes, error) {
 }
 
 func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOptions) ([]string, error) {
-	res, err := fetchWithRetry(PLATFORM_URL + "/bug-bounty/")
+	res, err := fetchWithRetry(ctx, PLATFORM_URL+"/bug-bounty/")
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +115,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts platforms.PollOptions) (scope.ProgramData, error) {
 	pData := scope.ProgramData{Url: handle}
 
-	res, err := fetchWithRetry(handle)
+	res, err := fetchWithRetry(ctx, handle)
 	if err != nil {
 		return pData, err
 	}
