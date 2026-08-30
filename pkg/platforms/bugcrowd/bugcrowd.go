@@ -381,16 +381,17 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 		// Iterating over each element in the programs array
 		result.ForEach(func(key, value gjson.Result) bool {
 			programURL := strings.TrimSpace(value.Get("briefUrl").String())
-			if programURL == "" {
-				return true
-			}
 			accessStatus := value.Get("accessStatus").String()
 
-			// Maintain a counter of unique program URLs found
+			// Maintain a counter of unique program URLs found so paging can
+			// finish even when a row has no briefUrl (those are not appended).
 			if !fetchedPrograms[programURL] {
 				allHandlersFoundCounter++
 				fetchedPrograms[programURL] = true
 
+				if programURL == "" {
+					return true
+				}
 				if !pvtOnly || (pvtOnly && accessStatus != "open") {
 					paths = append(paths, programURL)
 				}
