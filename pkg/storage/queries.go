@@ -20,8 +20,19 @@ func (d *DB) ListAIEnhancements(ctx context.Context, programURL string) (map[str
 		return result, nil
 	}
 
+	// Programs are stored under NormalizeProgramURL, and callers pass the raw
+	// poller URL. Match the canonical form plus the legacy trailing-slash
+	// variants that getOrCreateProgramTx also accepts, otherwise existing
+	// enhancements are missed and the AI work is redone every poll.
+	normalizedURL := NormalizeProgramURL(programURL)
+
 	var programID int64
-	err := d.sql.QueryRowContext(ctx, "SELECT id FROM programs WHERE url = $1", programURL).Scan(&programID)
+	err := d.sql.QueryRowContext(ctx, `
+		SELECT id FROM programs
+		WHERE url = $1 OR url = $1 || '/' OR rtrim(url, '/') = rtrim($1, '/')
+		ORDER BY id ASC
+		LIMIT 1
+	`, normalizedURL).Scan(&programID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, nil
 	}
@@ -104,20 +115,23 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 	argIdx := 1
 
 	if opts.Platform != "" && opts.Platform != "all" {
+		// splitPlatformList lowercases the filter so users can type any casing.
+		// The stored column must be lowered to match, otherwise a program
+		// recorded with uppercase characters is silently invisible to the filter.
 		platformList := splitPlatformList(opts.Platform)
 		if len(platformList) == 1 {
-			where += fmt.Sprintf(" AND p.platform = $%d", argIdx)
+			where += fmt.Sprintf(" AND lower(p.platform) = $%d", argIdx)
 			args = append(args, platformList[0])
 			argIdx++
 		} else if len(platformList) > 1 {
-			where += fmt.Sprintf(" AND p.platform = ANY($%d)", argIdx)
+			where += fmt.Sprintf(" AND lower(p.platform) = ANY($%d)", argIdx)
 			args = append(args, pgtype.FlatArray[string](platformList))
 			argIdx++
 		}
 	}
 	if opts.ProgramFilter != "" {
-		filter := fmt.Sprintf("%%%s%%", opts.ProgramFilter)
-		where += fmt.Sprintf(" AND p.url LIKE $%d", argIdx)
+		filter := "%" + escapeLikePattern(opts.ProgramFilter) + "%"
+		where += fmt.Sprintf(" AND p.url LIKE $%d ESCAPE '\\'", argIdx)
 		args = append(args, filter)
 		argIdx++
 	}
@@ -270,8 +284,8 @@ func (d *DB) GetChangesBetween(ctx context.Context, from, to time.Time, programU
 	args := []interface{}{from.UTC(), to.UTC()}
 
 	if programURL != "" {
-		query += " AND program_url LIKE $3"
-		args = append(args, "%"+programURL+"%")
+		query += " AND program_url LIKE $3 ESCAPE '\\'"
+		args = append(args, "%"+escapeLikePattern(programURL)+"%")
 	}
 
 	query += " ORDER BY occurred_at ASC"
@@ -304,19 +318,27 @@ type PlatformStats struct {
 }
 
 func (d *DB) GetStats(ctx context.Context) ([]PlatformStats, error) {
+	// DISTINCT ON collapses the AI join back to one row per raw target: a target
+	// with several AI variants must still count once. The join to programs is a
+	// LEFT JOIN so platforms whose programs have no targets yet still report a
+	// program count.
 	query := `
 		WITH effective_targets AS (
-			SELECT t.program_id, COALESCE(a.in_scope, t.in_scope) AS in_scope
+			SELECT DISTINCT ON (t.id)
+				t.id,
+				t.program_id,
+				COALESCE(a.in_scope, t.in_scope) AS in_scope
 			FROM targets_raw t
 			LEFT JOIN targets_ai_enhanced a ON a.target_id = t.id
+			ORDER BY t.id, a.id
 		)
 		SELECT
 			p.platform,
 			COUNT(DISTINCT p.id),
-			SUM(CASE WHEN et.in_scope = 1 THEN 1 ELSE 0 END),
-			SUM(CASE WHEN et.in_scope = 0 THEN 1 ELSE 0 END)
+			COALESCE(SUM(CASE WHEN et.in_scope = 1 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN et.in_scope = 0 THEN 1 ELSE 0 END), 0)
 		FROM
-			programs p JOIN effective_targets et ON p.id = et.program_id
+			programs p LEFT JOIN effective_targets et ON p.id = et.program_id
 		WHERE
 			p.is_ignored = 0 AND p.disabled = 0
 		GROUP BY
@@ -343,7 +365,7 @@ func (d *DB) GetStats(ctx context.Context) ([]PlatformStats, error) {
 }
 
 func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, error) {
-	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
+	likeQuery := "%" + escapeLikePattern(searchTerm) + "%"
 
 	query := `
 		SELECT 
@@ -364,9 +386,9 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 		JOIN programs p ON t.program_id = p.id
 		LEFT JOIN targets_ai_enhanced a ON a.target_id = t.id
 		WHERE p.is_ignored = 0 AND p.disabled = 0 AND (
-			COALESCE(a.target_ai_normalized, t.target) LIKE $1 OR
-			t.description LIKE $2 OR
-			p.url LIKE $3
+			COALESCE(a.target_ai_normalized, t.target) LIKE $1 ESCAPE '\' OR
+			t.description LIKE $2 ESCAPE '\' OR
+			p.url LIKE $3 ESCAPE '\'
 		)
 
 		UNION
@@ -386,7 +408,7 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 			NULL as ai_id,
 			'historical' as source
 		FROM scope_changes c
-		WHERE (c.target_normalized LIKE $4 OR c.target_ai_normalized LIKE $5 OR c.program_url LIKE $6)
+		WHERE (c.target_normalized LIKE $4 ESCAPE '\' OR c.target_ai_normalized LIKE $5 ESCAPE '\' OR c.program_url LIKE $6 ESCAPE '\')
 		AND NOT EXISTS (
 			SELECT 1 FROM targets_raw t2
 			JOIN programs p2 ON t2.program_id = p2.id
