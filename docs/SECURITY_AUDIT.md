@@ -254,29 +254,11 @@ Run `go list -m all | nancy sleuth` or `govulncheck` to check for known vulnerab
 
 ### 6.1 Docker Image
 
-**Finding: Running as root in container**
-- **Severity**: Medium
+**Finding: ~~Running as root in container~~ ✅ FIXED**
+- **Severity**: Medium → **Resolved**
 - **Location**: [Dockerfile](Dockerfile)
 
-```dockerfile
-FROM alpine:latest
-WORKDIR /root/
-# Runs as root by default
-```
-
-**Recommendations**:
-1. Create non-root user in Dockerfile
-2. Use specific Alpine version (not `latest`)
-3. Add `USER` directive
-
-```dockerfile
-# Recommended changes
-FROM alpine:3.19
-
-RUN adduser -D -g '' bbscope
-USER bbscope
-WORKDIR /home/bbscope
-```
+The image is based on `alpine:3.19`, creates a `bbscope` user (uid 1000), and runs with `USER bbscope`. See the live review backlog in [CODE_REVIEW.md](CODE_REVIEW.md).
 
 ### 6.2 Sensitive Data in Docker
 

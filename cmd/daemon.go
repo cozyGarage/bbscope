@@ -2,16 +2,19 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 )
 
 var daemonCmd = &cobra.Command{
@@ -83,15 +86,44 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	_ = pollCmd.PersistentFlags().Set("db", strconv.FormatBool(useDB))
 	_ = pollCmd.PersistentFlags().Set("ai", strconv.FormatBool(useAI))
 
+	rebuildPollers := func() ([]platforms.PlatformPoller, error) {
+		built, err := buildPollersFromConfig(ctx, proxyURL, platformFilter)
+		if err != nil {
+			return built, err
+		}
+		if len(built) == 0 {
+			return nil, fmt.Errorf("no platforms to poll; configure credentials or adjust --platforms")
+		}
+		return built, nil
+	}
+
+	// Authenticate once and reuse pollers across ticks. Rebuilding every
+	// interval re-ran Bugcrowd/YesWeHack login+TOTP and called SetupProxy again.
+	pollers, err := rebuildPollers()
+	if err != nil {
+		utils.Log.Errorf("Failed to build pollers: %v", err)
+	}
+
 	runOnce := func() error {
 		pollCmd.SetContext(ctx)
-		pollers, err := buildPollersFromConfig(ctx, proxyURL, platformFilter)
-		if err != nil {
+		if len(pollers) == 0 {
+			rebuilt, buildErr := rebuildPollers()
+			if buildErr != nil {
+				return buildErr
+			}
+			pollers = rebuilt
+		}
+		err := runPollWithPollers(pollCmd, pollers)
+		if err == nil || !looksLikeAuthError(err) {
 			return err
 		}
-		if len(pollers) == 0 {
-			return fmt.Errorf("no platforms to poll; configure credentials or adjust --platforms")
+		utils.Log.Warnf("Auth error during poll, re-authenticating: %v", err)
+		rebuilt, buildErr := rebuildPollers()
+		if buildErr != nil {
+			pollers = nil
+			return fmt.Errorf("re-authenticate: %w", errors.Join(err, buildErr))
 		}
+		pollers = rebuilt
 		return runPollWithPollers(pollCmd, pollers)
 	}
 
@@ -137,4 +169,25 @@ func init() {
 	daemonCmd.Flags().Bool("db", false, "Save results to database (required)")
 	daemonCmd.Flags().Bool("ai", false, "Use AI normalization")
 	daemonCmd.Flags().String("pid-file", "", "Write process ID to file (optional)")
+}
+
+func looksLikeAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"401",
+		"403",
+		"unauthorized",
+		"invalid auth",
+		"auth failed",
+		"authentication",
+		"invalid auth token",
+	} {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
 }

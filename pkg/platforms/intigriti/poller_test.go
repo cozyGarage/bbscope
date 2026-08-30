@@ -86,3 +86,11 @@ func TestPollerMapsInitialization(t *testing.T) {
 		t.Error("handleToURL map should be writable")
 	}
 }
+
+func TestFetchProgramScopeMissingIDIsError(t *testing.T) {
+	p := NewPoller()
+	_, err := p.FetchProgramScope(context.Background(), "unknown/handle", platforms.PollOptions{})
+	if err == nil {
+		t.Fatal("missing program id must be an error, not empty success")
+	}
+}

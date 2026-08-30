@@ -33,6 +33,9 @@ func (w *WebhookNotifier) Send(ctx context.Context, event ChangeEvent) error {
 	if !shouldSend(w.config.Events, event.Type) {
 		return nil
 	}
+	if err := webhookURLAllowed(w.config.URL); err != nil {
+		return fmt.Errorf("webhook destination: %w", err)
+	}
 
 	// Send the raw event as JSON
 	payload, err := json.Marshal(event)

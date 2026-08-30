@@ -79,6 +79,13 @@ func TestWebhookNotifier_Send(t *testing.T) {
 	}
 }
 
+func TestWebhookNotifier_RejectsMetadata(t *testing.T) {
+	n := NewWebhookNotifier(&WebhookConfig{URL: "http://169.254.169.254/latest/meta-data"})
+	if err := n.Send(context.Background(), sampleEvent()); err == nil {
+		t.Fatal("expected metadata webhook URL to be rejected")
+	}
+}
+
 func TestWebhookNotifier_EventFilter(t *testing.T) {
 	var received atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

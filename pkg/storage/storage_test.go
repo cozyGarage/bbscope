@@ -313,3 +313,37 @@ func TestRedactConnectionStringNeverLeaksPassword(t *testing.T) {
 		})
 	}
 }
+
+func TestUniqueIdentityStats(t *testing.T) {
+	entries := []UpsertEntry{
+		{TargetRaw: "https://example.com", Category: "url"},
+		{TargetRaw: "https://example.com/", Category: "URL"},
+		{TargetRaw: "https://other.example", Category: "url"},
+		{TargetRaw: "   ", Category: "url"},
+	}
+	unique, dups := uniqueIdentityStats(entries)
+	if unique != 2 {
+		t.Fatalf("unique = %d, want 2", unique)
+	}
+	if dups != 1 {
+		t.Fatalf("duplicates = %d, want 1", dups)
+	}
+}
+
+func TestSplitPlatformListExpandsAliases(t *testing.T) {
+	got := splitPlatformList("bugcrowd, H1")
+	has := func(s string) bool {
+		for _, g := range got {
+			if g == s {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("bc") || !has("bugcrowd") || !has("h1") || !has("hackerone") {
+		t.Fatalf("splitPlatformList = %v, want bc/bugcrowd and h1/hackerone", got)
+	}
+	if splitPlatformList("all") != nil && len(splitPlatformList("all")) != 0 {
+		t.Fatalf("all should be dropped, got %v", splitPlatformList("all"))
+	}
+}

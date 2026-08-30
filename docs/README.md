@@ -8,7 +8,8 @@ Welcome to the bbscope documentation! This guide will help you understand, use, 
 |----------|-------------|
 | [README](../README.md) | Installation, configuration, and usage examples |
 | [Architecture](ARCHITECTURE.md) | System design, components, and data flow |
-| [Security Audit](SECURITY_AUDIT.md) | Security assessment and recommendations |
+| [Code Review](CODE_REVIEW.md) | Review playbook, checklists, and live findings |
+| [Security Audit](SECURITY_AUDIT.md) | Historical security assessment |
 | [API Reference](API_REFERENCE.md) | Complete API and data type reference |
 | [Development](DEVELOPMENT.md) | Development setup and workflow |
 | [Contributing](CONTRIBUTING.md) | How to contribute to the project |
@@ -108,10 +109,14 @@ bbscope poll --db
 
 ### For Security Reviewers
 
-1. **Security assessment**: [Security Audit](SECURITY_AUDIT.md)
-   - Vulnerability findings
-   - Risk assessment
-   - Recommendations
+1. **How to review (start here)**: [Code Review Playbook](CODE_REVIEW.md)
+   - Severity and merge bar
+   - Subsystem checklists
+   - Live findings backlog
+
+2. **Historical assessment**: [Security Audit](SECURITY_AUDIT.md)
+   - Original vulnerability write-up
+   - Accepted risks also listed in [SECURITY.md](../SECURITY.md)
 
 ### For Project Maintainers
 

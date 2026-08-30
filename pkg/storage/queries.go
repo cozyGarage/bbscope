@@ -115,9 +115,9 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 	argIdx := 1
 
 	if opts.Platform != "" && opts.Platform != "all" {
-		// splitPlatformList lowercases the filter so users can type any casing.
-		// The stored column must be lowered to match, otherwise a program
-		// recorded with uppercase characters is silently invisible to the filter.
+		// splitPlatformList expands aliases (bugcrowd→bc) and lowercases so
+		// users can type any casing or long name. The stored column is lowered
+		// to match mixed-case historical rows.
 		platformList := splitPlatformList(opts.Platform)
 		if len(platformList) == 1 {
 			where += fmt.Sprintf(" AND lower(p.platform) = $%d", argIdx)

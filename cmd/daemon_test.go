@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 )
@@ -37,5 +38,20 @@ func TestDaemonPollFlagsResolveWithoutParse(t *testing.T) {
 	}
 	if concurrency != 5 {
 		t.Fatalf("expected default concurrency=5, got %d", concurrency)
+	}
+}
+
+func TestLooksLikeAuthError(t *testing.T) {
+	if looksLikeAuthError(nil) {
+		t.Fatal("nil is not an auth error")
+	}
+	if !looksLikeAuthError(fmt.Errorf("h1: invalid auth token")) {
+		t.Fatal("expected invalid auth token to match")
+	}
+	if !looksLikeAuthError(fmt.Errorf("fetching failed. Got status Code: 401")) {
+		t.Fatal("expected 401 to match")
+	}
+	if looksLikeAuthError(fmt.Errorf("connection refused")) {
+		t.Fatal("network errors must not force a full re-login")
 	}
 }

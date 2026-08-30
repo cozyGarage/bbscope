@@ -207,3 +207,21 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+func TestFetchProgramScopeEscapesHandle(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		_, _ = io.WriteString(w, `{"data":[],"links":{}}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	_, err := NewPoller("user", "token").FetchProgramScope(context.Background(), "acme?x", platforms.PollOptions{})
+	if err != nil {
+		t.Fatalf("FetchProgramScope: %v", err)
+	}
+	if !strings.Contains(gotPath, "acme%3Fx") {
+		t.Fatalf("path = %q, want PathEscape of handle", gotPath)
+	}
+}

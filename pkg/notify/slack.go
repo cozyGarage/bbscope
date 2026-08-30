@@ -34,6 +34,10 @@ func (s *SlackNotifier) Send(ctx context.Context, event ChangeEvent) error {
 		return nil
 	}
 
+	if err := webhookURLAllowed(s.config.WebhookURL); err != nil {
+		return fmt.Errorf("slack webhook destination: %w", err)
+	}
+
 	message := formatSlackMessage(event, s.config)
 	payload, err := json.Marshal(message)
 	if err != nil {
@@ -92,12 +96,12 @@ func formatSlackMessage(event ChangeEvent, cfg *SlackConfig) slackMessage {
 
 	username := "bbscope"
 	if cfg.Username != "" {
-		username = cfg.Username
+		username = escapeSlackText(escapeNotifierUsername(cfg.Username))
 	}
 
 	icon := ":dart:"
 	if cfg.Icon != "" {
-		icon = cfg.Icon
+		icon = escapeSlackText(cfg.Icon)
 	}
 
 	var scopeStatus string
@@ -114,7 +118,7 @@ func formatSlackMessage(event ChangeEvent, cfg *SlackConfig) slackMessage {
 		bountyStatus = "🎁 No Bounty"
 	}
 
-	title := fmt.Sprintf("%s Scope Change on %s", emoji, event.Platform)
+	title := fmt.Sprintf("%s Scope Change on %s", emoji, escapeSlackText(event.Platform))
 
 	attachment := slackAttachment{
 		Color: color,

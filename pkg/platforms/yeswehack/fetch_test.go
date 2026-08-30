@@ -239,3 +239,19 @@ func TestFetchProgramScopeRaggedFields(t *testing.T) {
 		t.Errorf("OutOfScope = %#v, want one legacy.example.com entry", pd.OutOfScope)
 	}
 }
+
+func TestFetchProgramScopeEscapesHandle(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	_, _ = NewPoller("tok").FetchProgramScope(context.Background(), "acme?x", platforms.PollOptions{})
+	if !strings.Contains(gotPath, "acme%3Fx") {
+		t.Fatalf("path = %q, want PathEscape of handle", gotPath)
+	}
+}

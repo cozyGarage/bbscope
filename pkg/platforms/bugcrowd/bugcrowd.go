@@ -105,8 +105,8 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 			return "", fmt.Errorf("invalid proxy URL: %w", err)
 		}
 
-		// Apply proxy settings directly to this client
-		// Note: InsecureSkipVerify is only enabled when using a proxy for debugging
+		// Apply proxy settings to this login client only. TLS verification
+		// stays on; --proxy must not imply InsecureSkipVerify.
 		retryClient.HTTPClient.Transport = &http.Transport{
 			Proxy: http.ProxyURL(proxyURL),
 			TLSClientConfig: &tls.Config{
@@ -114,7 +114,8 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 			},
 		}
 
-		// Also update the global client for other requests
+		// Also install a cloned proxied client for other requests that use
+		// the shared whttp default (do not mutate that default's transport).
 		if err = whttp.SetupProxy(proxy); err != nil {
 			return "", err
 		}
@@ -467,6 +468,7 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 	}
 
 	if res.StatusCode == 404 {
+		utils.Log.Warnf("bugcrowd: engagement page %s returned 404; skipping", handle)
 		return "", nil
 	}
 	if err := bugcrowdStatusError(res.StatusCode, "engagement page "+handle); err != nil {
@@ -597,6 +599,7 @@ func extractScopeFromTargetGroups(url string, categories string, token string, p
 	}
 
 	if res.StatusCode == 404 {
+		utils.Log.Warnf("bugcrowd: target_groups 404 for %s; skipping", url)
 		return nil
 	}
 	if err := bugcrowdStatusError(res.StatusCode, "target groups"); err != nil {

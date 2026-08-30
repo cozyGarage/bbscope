@@ -143,17 +143,13 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 
 func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts platforms.PollOptions) (scope.ProgramData, error) {
 	p.mu.RLock()
-	url := p.handleToURL[handle]
+	programURL := p.handleToURL[handle]
 	id := p.urlToID[handle]
 	p.mu.RUnlock()
 
-	pData := scope.ProgramData{Url: url}
+	pData := scope.ProgramData{Url: programURL}
 	if id == "" {
-		// The orchestrator always calls ListProgramHandles before fetching, so a
-		// missing id means this handle was not part of the listing. Skip it
-		// rather than re-entering ListProgramHandles (which races the maps).
-		utils.Log.Warnf("intigriti: no program id for handle %q; run ListProgramHandles first", handle)
-		return pData, nil
+		return pData, fmt.Errorf("intigriti: no program id for handle %q; run ListProgramHandles first", handle)
 	}
 
 	// Fetch with bounded, context-aware retries when the API rate-limits us.
@@ -163,7 +159,7 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 		var err error
 		res, err = whttp.SendHTTPRequest(&whttp.WHTTPReq{
 			Method:  "GET",
-			URL:     apiBaseURL + "/programs/" + id,
+			URL:     apiBaseURL + "/programs/" + url.PathEscape(id),
 			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
 		}, nil)
 		if err != nil {

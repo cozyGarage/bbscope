@@ -150,3 +150,52 @@ func TestFormatSlackMessageEscapesFields(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatSlackMessageEscapesTitleAndUsername(t *testing.T) {
+	msg := formatSlackMessage(ChangeEvent{
+		Type:     "added",
+		Platform: "<!everyone>",
+		Target:   "example.com",
+	}, &SlackConfig{Username: "ops <!channel>"})
+	if strings.Contains(msg.Attachments[0].Title, "<!everyone>") {
+		t.Fatalf("platform must be escaped in Slack title: %q", msg.Attachments[0].Title)
+	}
+	if strings.Contains(msg.Username, "<!channel>") && !strings.Contains(msg.Username, "&lt;") {
+		t.Fatalf("username must be escaped: %q", msg.Username)
+	}
+}
+
+func TestFormatDiscordMessageEscapesTitleAndUsername(t *testing.T) {
+	msg := formatDiscordMessage(ChangeEvent{
+		Type:     "added",
+		Platform: "*h1* @everyone",
+		Target:   "example.com",
+	}, &DiscordConfig{Username: "@everyone"})
+	if strings.Contains(msg.Embeds[0].Title, "*h1*") && !strings.Contains(msg.Embeds[0].Title, "\\*") {
+		t.Fatalf("platform markdown must be escaped in Discord title: %q", msg.Embeds[0].Title)
+	}
+	if strings.Contains(msg.Username, "@everyone") {
+		t.Fatalf("username must neutralize @everyone: %q", msg.Username)
+	}
+}
+
+func TestWebhookURLAllowed(t *testing.T) {
+	if err := webhookURLAllowed("https://example.com/hook"); err != nil {
+		t.Fatalf("public https should be allowed: %v", err)
+	}
+	if err := webhookURLAllowed("http://127.0.0.1:8080/hook"); err != nil {
+		t.Fatalf("loopback should be allowed: %v", err)
+	}
+	if err := webhookURLAllowed("https://169.254.169.254/latest/meta-data"); err == nil {
+		t.Fatal("cloud metadata IP must be rejected")
+	}
+	if err := webhookURLAllowed("http://metadata.google.internal/"); err == nil {
+		t.Fatal("metadata hostname must be rejected")
+	}
+	if err := webhookURLAllowed("ftp://example.com/x"); err == nil {
+		t.Fatal("non-http scheme must be rejected")
+	}
+	if err := webhookURLAllowed("https://user:pass@example.com/x"); err == nil {
+		t.Fatal("userinfo must be rejected")
+	}
+}

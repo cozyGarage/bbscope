@@ -453,9 +453,11 @@ Fixes #123
 
 ### Review Process
 
-1. A maintainer will review your PR
-2. Address any requested changes
-3. Once approved, a maintainer will merge
+1. CI must be green (test, lint, gosec, tidy, build). `govulncheck` is advisory.
+2. A maintainer reviews using the [code review playbook](CODE_REVIEW.md): severity, merge bar, and the checklists for subsystems the PR touched.
+3. Address requested changes. Do not resolve a Critical/High finding with “will fix later” unless it is an accepted risk already listed in the playbook.
+4. Security vulnerabilities go through [SECURITY.md](../SECURITY.md) (private reporting), not a public PR discussion of exploit details.
+5. Once approved, a maintainer will merge.
 
 ---
 

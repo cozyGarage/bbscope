@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 )
 
 var (
@@ -121,24 +123,13 @@ func Handle(handle string) error {
 // Platform validates a platform name (full names or short CLI aliases).
 func Platform(platform string) error {
 	platform = strings.TrimSpace(strings.ToLower(platform))
-	validPlatforms := []string{
-		"hackerone", "h1",
-		"bugcrowd", "bc",
-		"intigriti", "it",
-		"yeswehack", "ywh",
-		"immunefi",
-		"custom",
-		"dev",
-	}
-	for _, valid := range validPlatforms {
-		if platform == valid {
-			return nil
-		}
+	if platforms.KnownPlatform(platform) {
+		return nil
 	}
 	return &ValidationError{
 		Field:   "platform",
 		Value:   platform,
-		Message: fmt.Sprintf("must be one of: %s", strings.Join(validPlatforms, ", ")),
+		Message: "must be one of: hackerone, h1, bugcrowd, bc, intigriti, it, yeswehack, ywh, immunefi, custom, dev",
 	}
 }
 
