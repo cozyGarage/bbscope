@@ -62,6 +62,12 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		if res.StatusCode < 200 || res.StatusCode >= 300 {
 			return nil, fmt.Errorf("yeswehack: listing programs failed with status %d", res.StatusCode)
 		}
+		if !gjson.Get(res.BodyString, "items").Exists() {
+			return nil, fmt.Errorf("yeswehack: listing response missing items")
+		}
+		if page == 1 && !gjson.Get(res.BodyString, "pagination.nb_pages").Exists() {
+			return nil, fmt.Errorf("yeswehack: listing response missing pagination.nb_pages")
+		}
 
 		// Read each item as an object rather than zipping parallel `items.#.field`
 		// arrays: gjson omits absent fields instead of emitting null, so a single
@@ -107,6 +113,9 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return pData, fmt.Errorf("yeswehack: fetching program %s failed with status %d", handle, res.StatusCode)
+	}
+	if !gjson.Get(res.BodyString, "scopes").Exists() {
+		return pData, fmt.Errorf("yeswehack: program %s response missing scopes", handle)
 	}
 
 	// Get the list of categories to filter by.

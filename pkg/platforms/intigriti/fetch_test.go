@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 )
@@ -93,6 +94,34 @@ func TestListProgramHandles_Unauthorized(t *testing.T) {
 	p := newPoller(t)
 	if _, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
 		t.Fatal("expected error on 401, got nil")
+	}
+}
+
+func TestListProgramHandles_EmptyRecordsWithMaxCount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"maxCount":100,"records":[]}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := newPoller(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := p.ListProgramHandles(ctx, platforms.PollOptions{}); err == nil {
+		t.Fatal("expected an error for an empty records page with maxCount>0")
+	}
+}
+
+func TestListProgramHandles_HTML200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `<html>blocked</html>`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := newPoller(t)
+	if _, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
+		t.Fatal("expected an error for a 200 HTML listing page")
 	}
 }
 

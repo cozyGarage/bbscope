@@ -51,6 +51,38 @@ func TestIntegration_AIVariants(t *testing.T) {
 	}
 }
 
+func TestIntegration_IdenticalReupsertDoesNotPhantomUpdateVariants(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/phantom"
+
+	items := []TargetItem{
+		{
+			URI: "api.example.com", Category: "url", InScope: true,
+			Variants: []TargetVariant{
+				{Value: "www.api.example.com"},
+				{Value: "api.example.com", HasInScope: true, InScope: true, HasCategory: true, Category: "url"},
+			},
+		},
+	}
+	entries := mustBuildEntries(t, programURL, platform, "a", items)
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	changes, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries)
+	if err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	for _, c := range changes {
+		if c.ChangeType == "updated" {
+			t.Fatalf("identical re-upsert reported a phantom update: %+v", c)
+		}
+	}
+}
+
 func TestIntegration_AddCustomTarget(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

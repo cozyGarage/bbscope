@@ -78,6 +78,30 @@ func TestListProgramHandles(t *testing.T) {
 	}
 }
 
+func TestListProgramHandles_MissingItems(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"pagination":{"nb_pages":1}}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	if _, err := NewPoller("tok").ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
+		t.Fatal("expected an error when listing JSON has no items array")
+	}
+}
+
+func TestFetchProgramScope_MissingScopes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"name":"acme"}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	if _, err := NewPoller("tok").FetchProgramScope(context.Background(), "acme", platforms.PollOptions{}); err == nil {
+		t.Fatal("expected an error when the program body has no scopes array")
+	}
+}
+
 func TestListProgramHandles_NonOKStatus(t *testing.T) {
 	// Use 400 (not retried by go-retryablehttp) so the test stays fast.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

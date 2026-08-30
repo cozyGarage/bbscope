@@ -241,17 +241,23 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 		}
 	}
 
-	needsVariantUpdate := func(existing *existingVariant, desired *EntryVariant) bool {
-		if desired.HasInScope != existing.HasInScope {
+	needsVariantUpdate := func(existing *existingVariant, desired *EntryVariant, parent UpsertEntry) bool {
+		// NULL category/in_scope means "inherit the parent". Incoming variants
+		// often set HasInScope/HasCategory even when the value matches the
+		// parent; treating that as a change produced phantom "updated" rows
+		// on every identical re-upsert.
+		desiredHasIS := desired.HasInScope && desired.InScope != parent.InScope
+		if desiredHasIS != existing.HasInScope {
 			return true
 		}
-		if desired.HasInScope && existing.InScope != desired.InScope {
+		if desiredHasIS && existing.InScope != desired.InScope {
 			return true
 		}
-		if desired.HasCategory != existing.HasCategory {
+		desiredHasCat := desired.HasCategory && !strings.EqualFold(desired.Category, parent.Category)
+		if desiredHasCat != existing.HasCategory {
 			return true
 		}
-		if desired.HasCategory && !strings.EqualFold(existing.Category, desired.Category) {
+		if desiredHasCat && !strings.EqualFold(existing.Category, desired.Category) {
 			return true
 		}
 		return false
@@ -618,7 +624,7 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 				changes = append(changes, createChangeWithEntry(&entry, &variant, "added"))
 			} else {
 				// Use helper function to check if update is needed
-				if !needsVariantUpdate(&ev, &variant) {
+				if !needsVariantUpdate(&ev, &variant, entry) {
 					continue
 				}
 

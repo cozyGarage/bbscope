@@ -77,3 +77,26 @@ func TestValidateBugcrowdRedirectURL(t *testing.T) {
 		t.Fatal("scheme-relative URL should be rejected")
 	}
 }
+
+func TestResolveBugcrowdAPIURL(t *testing.T) {
+	orig := apiBaseURL
+	apiBaseURL = "https://bugcrowd.com"
+	t.Cleanup(func() { apiBaseURL = orig })
+
+	got, err := resolveBugcrowdAPIURL("/programs/acme/targets.json")
+	if err != nil {
+		t.Fatalf("relative path: %v", err)
+	}
+	if got != "https://bugcrowd.com/programs/acme/targets.json" {
+		t.Fatalf("resolved = %q", got)
+	}
+	if _, err := resolveBugcrowdAPIURL("https://evil.example/steal"); err == nil {
+		t.Fatal("absolute off-origin URL should be rejected")
+	}
+	if _, err := resolveBugcrowdAPIURL("//evil.example/steal"); err == nil {
+		t.Fatal("scheme-relative URL should be rejected")
+	}
+	if _, err := resolveBugcrowdAPIURL("//user@evil.example/steal"); err == nil {
+		t.Fatal("userinfo URL should be rejected")
+	}
+}

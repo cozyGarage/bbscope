@@ -78,6 +78,9 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		if res.StatusCode != 200 {
 			return nil, fmt.Errorf("fetching failed. Got status Code: %d", res.StatusCode)
 		}
+		if !gjson.Get(res.BodyString, "data").Exists() {
+			return nil, fmt.Errorf("hackerone: listing response missing data")
+		}
 
 		for i := 0; i < int(gjson.Get(res.BodyString, "data.#").Int()); i++ {
 			handle := gjson.Get(res.BodyString, "data."+strconv.Itoa(i)+".attributes.handle").Str
@@ -138,21 +141,26 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 				Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Basic " + p.authB64}},
 			}, nil)
 
-			if err == nil && strings.Contains(res.BodyString, "\"data\":") {
+			if err == nil && res.StatusCode == 200 && gjson.Get(res.BodyString, "data").Exists() {
 				statusCode = res.StatusCode
 				break
 			}
-			utils.Log.Warnf("scope fetch for %s failed (attempt %d/%d): %v", handle, attempt, maxScopeRetries, err)
-			if attempt < maxScopeRetries {
-				select {
-				case <-ctx.Done():
-					return scope.ProgramData{}, ctx.Err()
-				case <-time.After(2 * time.Second):
-				}
+			if err == nil {
+				statusCode = res.StatusCode
+			}
+			retryable := err != nil || res == nil || res.StatusCode >= 500 || res.StatusCode == 429
+			if !retryable || attempt >= maxScopeRetries {
+				break
+			}
+			utils.Log.Warnf("scope fetch for %s failed (attempt %d/%d): status %d err %v", handle, attempt, maxScopeRetries, statusCode, err)
+			select {
+			case <-ctx.Done():
+				return scope.ProgramData{}, ctx.Err()
+			case <-time.After(2 * time.Second):
 			}
 		}
 
-		if err != nil || res == nil || !strings.Contains(res.BodyString, "\"data\":") {
+		if err != nil || res == nil || res.StatusCode != 200 || !gjson.Get(res.BodyString, "data").Exists() {
 			return scope.ProgramData{}, fmt.Errorf("failed to retrieve data for %s after %d attempts with status %d", handle, maxScopeRetries, statusCode)
 		}
 
