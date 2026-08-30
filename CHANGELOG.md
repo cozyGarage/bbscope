@@ -13,6 +13,9 @@ higher-level, human-curated changes.
 - Code review playbook and subsystem checklists in `docs/CODE_REVIEW.md`; PR template links to them.
 - Shared platform alias map (`pkg/platforms.CanonicalName` / `MatchingNames`) used by poll filters, `db --platform`, and `validate.Platform`.
 - Webhook destination policy: `http`/`https` only, reject cloud-metadata and link-local IPs, allow loopback.
+- Fuzz targets for `NormalizeTarget`, platform aliases, and webhook URL policy (`make test-fuzz`).
+- Unit tests for `db export` / `db ignore` / config masking and TUI key handling.
+- CI secret scan (Gitleaks, blocking), short fuzz job, and Docker image scan (Trivy, advisory).
 
 ### Changed
 - `whttp.SetupProxy` clones a client instead of mutating the process-global transport.
@@ -20,6 +23,10 @@ higher-level, human-curated changes.
 - HackerOne, YesWeHack, and Intigriti interpolate `url.PathEscape`d handles/ids into request paths.
 - Duplicate identity keys in one upsert payload log a warning (first entry wins).
 - Slack/Discord notification titles and usernames are escaped like other untrusted fields.
+- Docker CI always loads the image locally so Trivy can scan it, then pushes to GHCR on non-PR events.
+- Trivy GitHub Action is pinned to the `v0.36.0` commit SHA.
+- GoReleaser GitHub Action is pinned to `~> v2` (release + `goreleaser check`).
+- `make test` / coverage use `-covermode=atomic`.
 
 ### Added
 - `db get domains|urls|ips|cidrs` now support a `--platform` filter (previously

@@ -12,6 +12,8 @@
 <!-- How was this tested? Include commands and results. -->
 - [ ] `go build ./...`
 - [ ] `go test ./...`
+- [ ] `make test-integration` if storage or `cmd` DB paths changed (`TEST_DB_URL` required)
+- [ ] `make test-fuzz` if parsers, aliases, or webhook URL policy changed
 - [ ] `golangci-lint run ./...`
 
 ## Related Issues

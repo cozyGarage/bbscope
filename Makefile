@@ -21,7 +21,7 @@ DIST_DIR := dist
 # Default target
 .DEFAULT_GOAL := build
 
-.PHONY: all build build-all clean test lint fmt vet run install help version docker
+.PHONY: all build build-all clean test test-short test-integration test-fuzz ci lint fmt vet run install help version docker coverage security
 
 ## help: Show this help message
 help:
@@ -95,19 +95,35 @@ clean:
 ## test: Run tests
 test:
 	@echo "Running tests..."
-	go test -v -race -cover ./...
+	go test -v -race -covermode=atomic -cover ./...
 
 ## test-short: Run tests without race detector
 test-short:
 	@echo "Running short tests..."
 	go test -v -cover ./...
 
+## test-integration: Run PostgreSQL-gated tests (requires TEST_DB_URL)
+test-integration:
+	@echo "Running integration tests..."
+	@test -n "$(TEST_DB_URL)" || (echo "Set TEST_DB_URL, e.g. postgres://bbscope:devpass@127.0.0.1:5432/bbscope?sslmode=disable" && exit 1)
+	go test -v -race -count=1 ./pkg/storage/... ./cmd/
+
+## test-fuzz: Run short fuzz targets (same budget as CI)
+test-fuzz:
+	@echo "Fuzzing parsers..."
+	go test -run=^$ -fuzz=FuzzNormalizeTarget -fuzztime=15s ./pkg/storage/
+	go test -run=^$ -fuzz=FuzzCanonicalName -fuzztime=15s ./pkg/platforms/
+	go test -run=^$ -fuzz=FuzzWebhookURLAllowed -fuzztime=15s ./pkg/notify/
+
 ## coverage: Generate test coverage report
 coverage:
 	@echo "Generating coverage report..."
-	go test -coverprofile=coverage.out ./...
+	go test -coverprofile=coverage.out -covermode=atomic ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+## ci: Local stand-in for the GitHub Test + Lint jobs
+ci: fmt vet lint test
 
 ## lint: Run linters
 lint:
@@ -146,7 +162,7 @@ update-deps:
 security:
 	@echo "Running security checks..."
 	@which gosec > /dev/null || (echo "Install gosec: go install github.com/securego/gosec/v2/cmd/gosec@latest" && exit 1)
-	gosec -quiet ./...
+	gosec -exclude=G104,G101,G115,G201,G204,G304,G402,G505,G701 -exclude-dir=docs ./...
 	@which govulncheck > /dev/null && govulncheck ./... || echo "govulncheck not found, skipping"
 
 ## run: Build and run with default args

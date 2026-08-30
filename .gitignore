@@ -18,6 +18,9 @@ dist/
 coverage.out
 coverage.html
 
+# Fuzz corpus (local / CI working tree)
+**/testdata/fuzz/
+
 # Database files
 *.sqlite
 *.db

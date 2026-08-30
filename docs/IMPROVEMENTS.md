@@ -563,8 +563,7 @@ func FuzzNormalizeTarget(f *testing.F) {
 }
 ```
 
-**Effort:** Low (2-3 hours)
-**Impact:** Medium (Robustness)
+**Status:** Implemented for `NormalizeTarget` / `NormalizeProgramURL`, `CanonicalName`, and `webhookURLAllowed`. CI runs each target for 15s (`make test-fuzz`).
 
 ---
 
@@ -669,10 +668,10 @@ Expand the BubbleTea TUI with advanced management and navigation features.
 
 ### Phase 7: Testing & Quality (Ongoing)
 - [x] Unit tests for core packages ✅
-- [ ] Integration test suite
-- [ ] Mock platform servers
-- [ ] Fuzz testing
-- [ ] CI/CD improvements
+- [x] Integration test suite (`TEST_DB_URL` + Postgres service in CI; not testcontainers)
+- [x] Mock platform servers (`httptest` per poller)
+- [x] Fuzz testing (`NormalizeTarget`, `CanonicalName`, `webhookURLAllowed`)
+- [x] CI/CD improvements (Gitleaks, Trivy, fuzz job, concurrency, atomic coverage)
 
 ---
 
