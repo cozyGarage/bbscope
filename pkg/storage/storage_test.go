@@ -205,9 +205,9 @@ func TestShouldAbortPartialSync(t *testing.T) {
 		{"three programs, one removed", 3, 1, false},
 		{"three programs, two removed", 3, 2, true},
 
-		// A one-program platform has no ratio that separates a genuine removal
-		// from a bad poll; refusing it would strand the platform permanently.
-		{"single program removed", 1, 1, false},
+		// A one-program platform wiped by an empty listing is the same full-wipe
+		// signature as a larger platform returning nothing.
+		{"single program removed", 1, 1, true},
 
 		// Degenerate inputs.
 		{"no active programs", 0, 0, false},

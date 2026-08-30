@@ -35,6 +35,7 @@ type Model struct {
 	stats         Stats
 	recentChanges []storage.Change
 	statsLoaded   bool
+	changesLoaded bool
 
 	// Polling state
 	pollingActive bool
@@ -153,10 +154,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statsMsg:
 		m.stats = Stats(msg)
 		m.statsLoaded = true
+		m.err = nil
 		return m, nil
 
 	case changesMsg:
 		m.recentChanges = []storage.Change(msg)
+		m.changesLoaded = true
+		m.err = nil
 		return m, nil
 
 	case pollingStatusMsg:

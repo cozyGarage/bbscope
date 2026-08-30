@@ -14,12 +14,12 @@ var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Launch interactive terminal UI",
 	Long: `Launch an interactive terminal user interface for browsing
-and managing bug bounty scopes.
+stored bug bounty scopes.
 
 Features:
-  - Dashboard with real-time statistics
-  - Live polling progress view
-  - Interactive search interface
+  - Dashboard with program, target, and recent-change counts
+  - Simulated polling progress (does not contact platforms)
+  - Search view is a placeholder
   - Minimal, clean design`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Share the other commands' resolution so the URL is validated the same

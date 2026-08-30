@@ -190,6 +190,25 @@ func TestFetchProgramScope_EngagementBrief(t *testing.T) {
 	}
 }
 
+func TestGetProgramHandles_SkipsEmptyBriefURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"engagements":[
+			{"briefUrl":"","accessStatus":"open"},
+			{"briefUrl":"/real","accessStatus":"open"}
+		],"paginationMeta":{"totalCount":2}}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	got, err := GetProgramHandles("tok", "bug_bounty", false)
+	if err != nil {
+		t.Fatalf("GetProgramHandles: %v", err)
+	}
+	if !equal(got, []string{"/real"}) {
+		t.Fatalf("handles = %v, want [/real] (empty briefUrl must be skipped)", got)
+	}
+}
+
 func TestGetProgramHandles_WAFBanned(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

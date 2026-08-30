@@ -100,6 +100,9 @@ func URL(rawURL string) error {
 	if parsed.Host == "" {
 		return &ValidationError{Field: "url", Value: rawURL, Message: "missing host"}
 	}
+	if parsed.User != nil {
+		return &ValidationError{Field: "url", Value: rawURL, Message: "userinfo is not allowed"}
+	}
 	return nil
 }
 

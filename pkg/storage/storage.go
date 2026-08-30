@@ -286,15 +286,14 @@ func shouldAbortPartialSync(activeCount, removeCount int) bool {
 	if removeCount <= 0 {
 		return false
 	}
-	// Removing a lone program from a one-program platform is a legitimate,
-	// unambiguous removal; there is no ratio that can distinguish it from a bad
-	// poll, and refusing it would strand the platform permanently.
-	if activeCount <= 1 {
-		return false
-	}
-	// No poll legitimately removes every program a platform has.
+	// No poll legitimately removes every program a platform has, including a
+	// one-program platform: an empty or truncated listing is indistinguishable
+	// from a genuine last-program departure, and wiping is the worse mistake.
 	if removeCount >= activeCount {
 		return true
+	}
+	if activeCount <= 1 {
+		return false
 	}
 	// A two-program platform reaches the half mark on a single genuine removal,
 	// so the ratio cannot discriminate there. The full-wipe check above still

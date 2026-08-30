@@ -177,6 +177,25 @@ func TestListProgramHandlesRejectsOffOriginNext(t *testing.T) {
 	}
 }
 
+func TestListProgramHandlesSkipsEmptyHandle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[
+			{"attributes":{"handle":"","state":"public_mode","submission_state":"open","offers_bounties":true}},
+			{"attributes":{"handle":"real-prog","state":"public_mode","submission_state":"open","offers_bounties":true}}
+		]}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	got, err := NewPoller("user", "token").ListProgramHandles(context.Background(), platforms.PollOptions{})
+	if err != nil {
+		t.Fatalf("ListProgramHandles: %v", err)
+	}
+	if !equal(got, []string{"real-prog"}) {
+		t.Fatalf("handles = %v, want [real-prog] (empty handle must be skipped)", got)
+	}
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

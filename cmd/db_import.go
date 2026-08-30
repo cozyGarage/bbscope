@@ -193,8 +193,12 @@ func groupEntriesForImport(entries []storage.Entry) ([]programKey, map[programKe
 			baseCat = e.Category
 		}
 
+		// The unique key in targets_raw is (program_id, category, target).
+		// Indexing by raw target alone collapsed a second category for the
+		// same string into the first item and dropped it on import.
+		identity := raw + "|" + baseCat
 		items := grouped[key]
-		pos, exists := index[key][raw]
+		pos, exists := index[key][identity]
 		if !exists {
 			items = append(items, storage.TargetItem{
 				URI:         raw,
@@ -204,7 +208,7 @@ func groupEntriesForImport(entries []storage.Entry) ([]programKey, map[programKe
 				IsBBP:       e.IsBBP,
 			})
 			pos = len(items) - 1
-			index[key][raw] = pos
+			index[key][identity] = pos
 		}
 		item := items[pos]
 		if e.Source != "ai" {

@@ -175,6 +175,34 @@ func TestGroupEntriesForImportCollapsesAIVariants(t *testing.T) {
 	}
 }
 
+func TestGroupEntriesForImportKeepsDistinctCategories(t *testing.T) {
+	_, grouped, _ := groupEntriesForImport([]storage.Entry{
+		{
+			ProgramURL: "https://h1/p", Platform: "h1", Handle: "p",
+			TargetRaw: "api.example.com", Category: "url", InScope: true,
+		},
+		{
+			ProgramURL: "https://h1/p", Platform: "h1", Handle: "p",
+			TargetRaw: "api.example.com", Category: "wildcard", InScope: true,
+		},
+	})
+	key := programKey{url: "https://h1/p", platform: "h1", handle: "p"}
+	items := grouped[key]
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (one per category), got %d: %#v", len(items), items)
+	}
+	seen := map[string]bool{}
+	for _, item := range items {
+		if item.URI != "api.example.com" {
+			t.Errorf("unexpected URI %q", item.URI)
+		}
+		seen[item.Category] = true
+	}
+	if !seen["url"] || !seen["wildcard"] {
+		t.Fatalf("categories = %v, want url and wildcard", seen)
+	}
+}
+
 func TestGroupEntriesForImportCustomKeepsScope(t *testing.T) {
 	_, grouped, _ := groupEntriesForImport([]storage.Entry{
 		{

@@ -790,3 +790,157 @@ func TestIntegration_GetOrCreateProgramDoesNotStealURL(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegration_SearchTargetsIsCaseInsensitive(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+	token := "CaseTok" + strconv.FormatInt(time.Now().UnixNano(), 36)
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: token + ".example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	results, err := db.SearchTargets(ctx, strings.ToLower(token))
+	if err != nil {
+		t.Fatalf("SearchTargets: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatalf("expected case-insensitive SearchTargets to find %q", token)
+	}
+}
+
+func TestIntegration_SearchTargetsSlashNormalizedHistorical(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+	target := "slash-" + platform + ".example.com"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: target, Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	_, err := db.sql.ExecContext(ctx, `
+		INSERT INTO scope_changes(occurred_at, program_url, platform, handle, target_normalized, target_raw, category, in_scope, is_bbp, change_type)
+		VALUES (CURRENT_TIMESTAMP, $1, $2, 'a', $3, $3, 'url', 1, 0, 'removed')
+	`, programURL+"/", platform, target)
+	if err != nil {
+		t.Fatalf("insert historical row: %v", err)
+	}
+
+	results, err := db.SearchTargets(ctx, target)
+	if err != nil {
+		t.Fatalf("SearchTargets: %v", err)
+	}
+	for _, r := range results {
+		if r.Platform == platform && r.Source == "historical" {
+			t.Fatalf("live target leaked as historical via trailing-slash program URL: %+v", r)
+		}
+	}
+}
+
+func TestIntegration_IgnoreByHandle(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	handle := "h-" + platform
+	programURL := "https://example.com/" + platform + "/a"
+	target := "byhandle-" + platform + ".example.com"
+
+	entries := mustBuildEntries(t, programURL, platform, handle, []TargetItem{
+		{URI: target, Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, handle, entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	if err := db.SetProgramIgnoredStatus(ctx, handle, true); err != nil {
+		t.Fatalf("SetProgramIgnoredStatus(handle): %v", err)
+	}
+
+	found, err := db.SearchTargets(ctx, target)
+	if err != nil {
+		t.Fatalf("SearchTargets: %v", err)
+	}
+	for _, r := range found {
+		if r.Platform == platform {
+			t.Fatalf("handle-ignored program leaked via search: %+v", r)
+		}
+	}
+}
+
+func TestIntegration_SyncAndCountIgnorePlatformCase(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t) + "_MixedCase"
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	progA := "https://example.com/" + platform + "/a"
+	progB := "https://example.com/" + platform + "/b"
+
+	for _, p := range []string{progA, progB} {
+		entries := mustBuildEntries(t, p, platform, "h", []TargetItem{
+			{URI: "t.example.com", Category: "url", InScope: true},
+		})
+		if _, err := db.UpsertProgramEntries(ctx, p, platform, "h", entries); err != nil {
+			t.Fatalf("UpsertProgramEntries(%s): %v", p, err)
+		}
+	}
+
+	count, err := db.GetActiveProgramCount(ctx, strings.ToUpper(platform))
+	if err != nil || count != 2 {
+		t.Fatalf("GetActiveProgramCount(upper) = %d, %v; want 2", count, err)
+	}
+
+	if _, err := db.SyncPlatformPrograms(ctx, strings.ToLower(platform), []string{progA}); err != nil {
+		t.Fatalf("SyncPlatformPrograms(lower): %v", err)
+	}
+	count, err = db.GetActiveProgramCount(ctx, platform)
+	if err != nil || count != 1 {
+		t.Fatalf("GetActiveProgramCount after mixed-case sync = %d, %v; want 1", count, err)
+	}
+
+	if err := db.SetProgramIgnoredStatus(ctx, progA, true); err != nil {
+		t.Fatalf("ignore: %v", err)
+	}
+	ignored, err := db.GetIgnoredPrograms(ctx, strings.ToUpper(platform))
+	if err != nil {
+		t.Fatalf("GetIgnoredPrograms: %v", err)
+	}
+	if !ignored[NormalizeProgramURL(progA)] && !ignored[progA] {
+		t.Fatalf("GetIgnoredPrograms(upper) missed %s: %#v", progA, ignored)
+	}
+}
+
+func TestIntegration_SyncRefusesSingleProgramWipe(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/only"
+
+	entries := mustBuildEntries(t, programURL, platform, "only", []TargetItem{
+		{URI: "only.example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "only", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	if _, err := db.SyncPlatformPrograms(ctx, platform, nil); !errors.Is(err, ErrAbortingPartialSync) {
+		t.Fatalf("empty listing against one stored program: got %v, want ErrAbortingPartialSync", err)
+	}
+	count, err := db.GetActiveProgramCount(ctx, platform)
+	if err != nil || count != 1 {
+		t.Fatalf("lone program must remain active, count=%d err=%v", count, err)
+	}
+}

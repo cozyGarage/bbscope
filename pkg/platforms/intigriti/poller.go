@@ -3,6 +3,7 @@ package intigriti
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -96,15 +97,22 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			id := record.Get("id").String()
 			maxBounty := record.Get("maxBounty.value").Int()
 			confidentialityLevel := record.Get("confidentialityLevel.id").Int()
-			programPathParts := strings.Split(record.Get("webLinks.detail").String(), "=")
-			if len(programPathParts) < 2 {
-				continue
+			detail := record.Get("webLinks.detail").String()
+			programURL, err := parseIntigritiProgramURL(detail)
+			if err != nil {
+				company := record.Get("companyHandle").String()
+				progHandle := record.Get("handle").String()
+				if company != "" && progHandle != "" {
+					programURL = "https://app.intigriti.com/researcher/programs/" + company + "/" + progHandle + "/detail"
+				} else if id != "" {
+					return nil, fmt.Errorf("intigriti: program %s webLinks.detail is unparseable: %q", id, detail)
+				} else {
+					continue
+				}
 			}
-			programPath := programPathParts[1]
-			url := "https://app.intigriti.com/researcher" + programPath
 
-			parts := strings.Split(strings.TrimSuffix(url, "/detail"), "/")
-			handle := url
+			parts := strings.Split(strings.TrimSuffix(programURL, "/detail"), "/")
+			handle := programURL
 			if len(parts) >= 2 {
 				handle = parts[len(parts)-2] + "/" + parts[len(parts)-1]
 			}
@@ -113,7 +121,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			if (opts.PrivateOnly && confidentialityLevel != 4) || !opts.PrivateOnly {
 				if (opts.BountyOnly && maxBounty != 0) || !opts.BountyOnly {
 					urlToID[handle] = id
-					handleToURL[handle] = url
+					handleToURL[handle] = programURL
 					handles = append(handles, handle)
 				}
 			}
@@ -244,4 +252,35 @@ func isInArray(val int, array []int) bool {
 		}
 	}
 	return false
+}
+
+// parseIntigritiProgramURL turns webLinks.detail into the researcher program
+// URL. The API has used both `detail=/programs/...` and a full URL.
+func parseIntigritiProgramURL(detail string) (string, error) {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return "", fmt.Errorf("empty webLinks.detail")
+	}
+	raw := detail
+	if _, after, found := strings.Cut(detail, "="); found && strings.Contains(after, "/programs/") {
+		raw = after
+	}
+	var path string
+	if strings.Contains(raw, "://") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", fmt.Errorf("parse webLinks.detail: %w", err)
+		}
+		path = u.Path
+	} else {
+		path = raw
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	idx := strings.Index(path, "/programs/")
+	if idx < 0 {
+		return "", fmt.Errorf("webLinks.detail has no program path")
+	}
+	return "https://app.intigriti.com/researcher" + path[idx:], nil
 }
