@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -216,17 +218,18 @@ var printCmd = &cobra.Command{
 				scope.PrintProgramScope(pd, output, delimiter, oos)
 			}
 		case "json":
-			out := make([]interface{}, 0)
+			type printEntry struct {
+				ProgramURL  string `json:"program_url"`
+				Platform    string `json:"platform"`
+				Handle      string `json:"handle"`
+				Target      string `json:"target"`
+				Category    string `json:"category"`
+				Description string `json:"description"`
+				InScope     bool   `json:"in_scope"`
+			}
+			out := make([]printEntry, 0, len(filtered))
 			for _, e := range filtered {
-				out = append(out, struct {
-					ProgramURL  string `json:"program_url"`
-					Platform    string `json:"platform"`
-					Handle      string `json:"handle"`
-					Target      string `json:"target"`
-					Category    string `json:"category"`
-					Description string `json:"description"`
-					InScope     bool   `json:"in_scope"`
-				}{
+				out = append(out, printEntry{
 					ProgramURL:  e.ProgramURL,
 					Platform:    e.Platform,
 					Handle:      e.Handle,
@@ -242,10 +245,29 @@ var printCmd = &cobra.Command{
 			}
 			fmt.Println(string(bytes))
 		case "csv":
-			fmt.Println("program_url,platform,handle,target,category,description,in_scope")
+			// encoding/csv quotes embedded commas, quotes and newlines. The
+			// previous hand-rolled printer stripped commas out of descriptions
+			// instead, corrupting the data it was asked to emit.
+			w := csv.NewWriter(os.Stdout)
+			if err := w.Write([]string{"program_url", "platform", "handle", "target", "category", "description", "in_scope"}); err != nil {
+				return err
+			}
 			for _, e := range filtered {
-				// naive CSV, no quoting for commas in description
-				fmt.Printf("%s,%s,%s,%s,%s,%s,%t\n", e.ProgramURL, e.Platform, e.Handle, e.TargetNormalized, e.Category, strings.ReplaceAll(e.Description, ",", " "), e.InScope)
+				if err := w.Write([]string{
+					e.ProgramURL,
+					e.Platform,
+					e.Handle,
+					e.TargetNormalized,
+					e.Category,
+					e.Description,
+					strconv.FormatBool(e.InScope),
+				}); err != nil {
+					return err
+				}
+			}
+			w.Flush()
+			if err := w.Error(); err != nil {
+				return err
 			}
 		default:
 			return fmt.Errorf("unknown format: %s", format)
