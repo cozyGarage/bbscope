@@ -97,7 +97,7 @@ func TestProcessProgramsConcurrently_CancelMidFlightReturnsError(t *testing.T) {
 	// Concurrency 1 so the cancellation lands before the remaining handles run.
 	urls, err := processProgramsConcurrently(ctx, newPollTestCmd(), p, handles, platforms.PollOptions{}, false, nil, nil, true, 1, nil, time.Time{})
 	if err == nil {
-		t.Fatal("a cancelled poll must surface an error so the caller skips platform sync")
+		t.Fatal("a canceled poll must surface an error so the caller skips platform sync")
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected a context.Canceled error, got %v", err)

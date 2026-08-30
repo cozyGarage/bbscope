@@ -52,14 +52,9 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid --from date (use YYYY-MM-DD): %w", err)
 	}
 
-	var to time.Time
-	if toStr != "" {
-		to, err = time.Parse("2006-01-02", toStr)
-		if err != nil {
-			return fmt.Errorf("invalid --to date (use YYYY-MM-DD): %w", err)
-		}
-	} else {
-		to = time.Now()
+	to, err := parseDiffTo(toStr, time.Now())
+	if err != nil {
+		return err
 	}
 
 	if to.Before(from) {
@@ -112,6 +107,21 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		outputDiffText(filtered, from, to)
 	}
 	return nil
+}
+
+// parseDiffTo resolves the --to flag. A bare YYYY-MM-DD parses to midnight, so
+// treating it as the upper bound of an inclusive range would discard everything
+// that happened during the day the user actually named; extend it to the last
+// instant of that day instead. An empty flag means "up to now".
+func parseDiffTo(toStr string, now time.Time) (time.Time, error) {
+	if toStr == "" {
+		return now, nil
+	}
+	to, err := time.Parse("2006-01-02", toStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid --to date (use YYYY-MM-DD): %w", err)
+	}
+	return to.AddDate(0, 0, 1).Add(-time.Nanosecond), nil
 }
 
 func outputDiffText(changes []storage.Change, from, to time.Time) {

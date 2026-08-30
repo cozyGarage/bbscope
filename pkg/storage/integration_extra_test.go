@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -119,6 +120,192 @@ func TestIntegration_GetStatsAndSearch(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatalf("expected SearchTargets to find %q, got none", token)
 	}
+}
+
+// TestIntegration_GetStatsAIVariantsCountOnce pins the AI-variant fix. The
+// stats CTE used to LEFT JOIN targets_ai_enhanced without collapsing back to one
+// row per raw target, so a target carrying N variants was counted N times.
+func TestIntegration_GetStatsAIVariantsCountOnce(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+
+	// One in-scope target with three AI variants and one out-of-scope target
+	// with two. Correct stats are 1 and 1, not 3 and 2.
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{
+			URI:      "https://*.multi.example.com/**",
+			Category: "url",
+			InScope:  true,
+			Variants: []TargetVariant{
+				{Value: "multi.example.com", HasCategory: true, Category: "wildcard"},
+				{Value: "a.multi.example.com", HasCategory: true, Category: "url"},
+				{Value: "b.multi.example.com", HasCategory: true, Category: "url"},
+			},
+		},
+		{
+			URI:      "https://*.gone.example.com/**",
+			Category: "url",
+			InScope:  false,
+			Variants: []TargetVariant{
+				{Value: "gone.example.com", HasCategory: true, Category: "wildcard"},
+				{Value: "x.gone.example.com", HasCategory: true, Category: "url"},
+			},
+		},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	mine := statsFor(t, db, ctx, platform)
+	if mine.ProgramCount != 1 {
+		t.Errorf("ProgramCount = %d, want 1", mine.ProgramCount)
+	}
+	if mine.InScopeCount != 1 {
+		t.Errorf("InScopeCount = %d, want 1 (AI variants must not inflate the count)", mine.InScopeCount)
+	}
+	if mine.OutOfScopeCount != 1 {
+		t.Errorf("OutOfScopeCount = %d, want 1 (AI variants must not inflate the count)", mine.OutOfScopeCount)
+	}
+}
+
+// TestIntegration_GetStatsCountsProgramsWithoutTargets covers the inner-JOIN
+// fix: a program that has no targets yet still belongs in the program count.
+func TestIntegration_GetStatsCountsProgramsWithoutTargets(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+
+	if _, err := db.sql.ExecContext(ctx, `
+		INSERT INTO programs(url, platform, handle, first_seen_at, last_seen_at)
+		VALUES($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, "https://example.com/"+platform+"/empty", platform, "empty"); err != nil {
+		t.Fatalf("inserting target-less program: %v", err)
+	}
+
+	mine := statsFor(t, db, ctx, platform)
+	if mine.ProgramCount != 1 {
+		t.Errorf("ProgramCount = %d, want 1 (a program with no targets still counts)", mine.ProgramCount)
+	}
+	if mine.InScopeCount != 0 || mine.OutOfScopeCount != 0 {
+		t.Errorf("target counts = %d/%d, want 0/0", mine.InScopeCount, mine.OutOfScopeCount)
+	}
+}
+
+// TestIntegration_SearchTargetsEscapesWildcards confirms that LIKE
+// metacharacters in a search term are matched literally rather than acting as
+// wildcards that match every row.
+func TestIntegration_SearchTargetsEscapesWildcards(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: "alpha.example.com", Category: "url", InScope: true},
+		{URI: "beta.example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	// "%" previously matched every target in the database.
+	results, err := db.SearchTargets(ctx, "%")
+	if err != nil {
+		t.Fatalf("SearchTargets: %v", err)
+	}
+	for _, r := range results {
+		if r.Platform == platform {
+			t.Fatalf("a literal %% must not match %q", r.TargetNormalized)
+		}
+	}
+}
+
+// TestIntegration_ListAIEnhancementsNonCanonicalURL covers the lookup fix:
+// callers pass the raw poller URL, while programs are stored canonicalized.
+func TestIntegration_ListAIEnhancementsNonCanonicalURL(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{
+			URI:      "https://*.canon.example.com/**",
+			Category: "url",
+			InScope:  true,
+			Variants: []TargetVariant{
+				{Value: "canon.example.com", HasCategory: true, Category: "wildcard"},
+			},
+		},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	// Trailing slash and an uppercased host both canonicalize to the stored URL.
+	for _, variant := range []string{
+		programURL + "/",
+		"https://EXAMPLE.com/" + platform + "/a",
+	} {
+		enh, err := db.ListAIEnhancements(ctx, variant)
+		if err != nil {
+			t.Fatalf("ListAIEnhancements(%q): %v", variant, err)
+		}
+		if len(enh) == 0 {
+			t.Errorf("ListAIEnhancements(%q) found no enhancements; lookup is not canonicalizing", variant)
+		}
+	}
+}
+
+// TestIntegration_ListEntriesPlatformFilterIgnoresCase pins the fix for the
+// asymmetry that turned CI red: splitPlatformList lowercases the user's filter,
+// but the query compared it against the raw stored column, so any program whose
+// platform contained uppercase characters was invisible to --platform.
+func TestIntegration_ListEntriesPlatformFilterIgnoresCase(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t) + "_MixedCase"
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: "case.example.com", Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	for _, filter := range []string{platform, strings.ToLower(platform), strings.ToUpper(platform)} {
+		listed, err := db.ListEntries(ctx, ListOptions{Platform: filter})
+		if err != nil {
+			t.Fatalf("ListEntries(%q): %v", filter, err)
+		}
+		if len(listed) != 1 {
+			t.Errorf("ListEntries(platform=%q) returned %d entries, want 1", filter, len(listed))
+		}
+	}
+}
+
+// statsFor returns the PlatformStats row for one platform, failing if absent.
+func statsFor(t *testing.T, db *DB, ctx context.Context, platform string) PlatformStats {
+	t.Helper()
+	stats, err := db.GetStats(ctx)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	for _, s := range stats {
+		if s.Platform == platform {
+			return s
+		}
+	}
+	t.Fatalf("platform %q not present in stats", platform)
+	return PlatformStats{}
 }
 
 func TestIntegration_ListRecentChanges(t *testing.T) {

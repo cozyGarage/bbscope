@@ -85,6 +85,35 @@ func TestOutputDiffJSON(t *testing.T) {
 	}
 }
 
+// TestParseDiffTo pins the inclusive end-of-day boundary. `--to 2024-02-01`
+// used to parse to midnight, which excluded every change made on Feb 1.
+func TestParseDiffTo(t *testing.T) {
+	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+
+	got, err := parseDiffTo("2024-02-01", now)
+	if err != nil {
+		t.Fatalf("parseDiffTo: %v", err)
+	}
+	want := time.Date(2024, 2, 1, 23, 59, 59, 999999999, time.UTC)
+	if !got.Equal(want) {
+		t.Errorf("parseDiffTo(\"2024-02-01\") = %v, want %v", got, want)
+	}
+
+	// A change late on the named day must fall inside the range.
+	lateOnFeb1 := time.Date(2024, 2, 1, 23, 30, 0, 0, time.UTC)
+	if lateOnFeb1.After(got) {
+		t.Errorf("a change at %v should be within an inclusive --to 2024-02-01", lateOnFeb1)
+	}
+
+	if got, err := parseDiffTo("", now); err != nil || !got.Equal(now) {
+		t.Errorf("parseDiffTo(\"\") = %v, %v; want %v, nil", got, err, now)
+	}
+
+	if _, err := parseDiffTo("not-a-date", now); err == nil {
+		t.Error("parseDiffTo(\"not-a-date\") should return an error")
+	}
+}
+
 func TestOutputDiffText(t *testing.T) {
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)

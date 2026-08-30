@@ -268,7 +268,7 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 				// Stop pulling new work once the context is done. Record the
 				// cancellation as an error: the caller uses a non-nil error to skip
 				// SyncPlatformPrograms, and syncing against the truncated URL list a
-				// cancelled run produces would disable every program not yet fetched.
+				// canceled run produces would disable every program not yet fetched.
 				if err := ctx.Err(); err != nil {
 					errorMu.Lock()
 					if firstError == nil {

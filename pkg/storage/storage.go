@@ -161,6 +161,15 @@ func OpenWithPool(connectionString string, pool PoolConfig) (*DB, error) {
 	db.SetConnMaxLifetime(pool.ConnMaxLifetime)
 	db.SetConnMaxIdleTime(pool.ConnMaxIdleTime)
 
+	// Every failure past this point must release the pool sql.Open just created,
+	// otherwise a failed Open leaks connections for the life of the process.
+	success := false
+	defer func() {
+		if !success {
+			_ = db.Close()
+		}
+	}()
+
 	if err := db.Ping(); err != nil {
 		// Check if database doesn't exist, try to create it
 		if strings.Contains(err.Error(), "does not exist") {
@@ -178,6 +187,8 @@ func OpenWithPool(connectionString string, pool PoolConfig) (*DB, error) {
 	if err := applyMigrations(db); err != nil {
 		return nil, fmt.Errorf("migrating schema: %w", err)
 	}
+
+	success = true
 	return &DB{sql: db}, nil
 }
 
