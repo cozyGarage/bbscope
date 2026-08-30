@@ -422,11 +422,13 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 					continue
 				}
 
-				// Print changes (thread-safe - fmt.Printf is safe for concurrent use)
-				if !isFirstRunForPlatform {
-					printChanges(changes, since)
-					notifier.Dispatch(ctx, changes)
-				}
+				// SkipChangeLog suppresses the audit write on a platform's
+				// first populate. The returned slice is still the changes to
+				// print and notify about — dropping it here meant the first
+				// poll (and a re-populate after every program was disabled)
+				// never fired notifiers.
+				printChanges(changes, since)
+				notifier.Dispatch(ctx, filterChangesForOutput(changes, since))
 			}
 		}()
 	}
@@ -445,8 +447,10 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 	return polledProgramURLs, firstError
 }
 
-func printChanges(changes []storage.Change, since time.Time) {
-	// Track which targets have variant changes (AI-normalized)
+// filterChangesForOutput drops changes older than --since and the base-target
+// "added"/"removed" row when an AI-variant row exists for the same target.
+// printChanges and Dispatch share this so notifications do not double-send.
+func filterChangesForOutput(changes []storage.Change, since time.Time) []storage.Change {
 	hasVariants := make(map[string]bool)
 	for _, c := range changes {
 		if !since.IsZero() && c.OccurredAt.Before(since) {
@@ -458,18 +462,24 @@ func printChanges(changes []storage.Change, since time.Time) {
 		}
 	}
 
+	out := make([]storage.Change, 0, len(changes))
 	for _, c := range changes {
 		if !since.IsZero() && c.OccurredAt.Before(since) {
 			continue
 		}
-		// Skip base target changes if there are variant changes for the same target
 		if c.TargetAINormalized == "" {
 			key := fmt.Sprintf("%s|%s|%s", c.Platform, c.ProgramURL, c.TargetRaw)
 			if hasVariants[key] {
 				continue
 			}
 		}
+		out = append(out, c)
+	}
+	return out
+}
 
+func printChanges(changes []storage.Change, since time.Time) {
+	for _, c := range filterChangesForOutput(changes, since) {
 		var emoji string
 		switch c.ChangeType {
 		case "added":

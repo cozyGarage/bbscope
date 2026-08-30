@@ -221,19 +221,26 @@ func SetupProxy(proxyURL string) error {
 		return fmt.Errorf("invalid proxy URL: %w", err)
 	}
 
-	client := GetDefaultClient()
-	client.HTTPClient.Transport = &http.Transport{
-		Proxy: http.ProxyURL(parsedURL),
-		TLSClientConfig: &tls.Config{
-			// Intercepting proxies (Burp/ZAP) present their own certificate, so
-			// verification is skipped here. This transport is only installed when
-			// the user explicitly passes --proxy. Use a modern TLS floor and let
-			// Go negotiate cipher suites instead of pinning obsolete TLS 1.1.
-			InsecureSkipVerify: true,
-			MinVersion:         tls.VersionTLS12,
-		},
+	var base *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok && dt != nil {
+		base = dt.Clone()
+	} else {
+		base = &http.Transport{
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+	}
+	base.Proxy = http.ProxyURL(parsedURL)
+	if base.TLSClientConfig == nil {
+		base.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	} else {
+		cloned := base.TLSClientConfig.Clone()
+		cloned.MinVersion = tls.VersionTLS12
+		cloned.InsecureSkipVerify = false
+		base.TLSClientConfig = cloned
 	}
 
+	client := GetDefaultClient()
+	client.HTTPClient.Transport = base
 	return nil
 }
 

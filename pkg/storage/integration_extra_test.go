@@ -571,3 +571,85 @@ func TestUpsertMixedBlankTargetsRemovesOnlyAbsent(t *testing.T) {
 		t.Fatalf("blank entries must not be added as targets, got %v", counts)
 	}
 }
+
+func TestIntegration_SearchTargetsHidesIgnoredPrograms(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+	target := "ignoreme-" + platform + ".example.com"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: target, Category: "url", InScope: true},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+
+	found, err := db.SearchTargets(ctx, target)
+	if err != nil {
+		t.Fatalf("SearchTargets: %v", err)
+	}
+	if len(found) == 0 {
+		t.Fatal("expected the live target before ignore")
+	}
+
+	if err := db.SetProgramIgnoredStatus(ctx, programURL, true); err != nil {
+		t.Fatalf("SetProgramIgnoredStatus: %v", err)
+	}
+
+	found, err = db.SearchTargets(ctx, target)
+	if err != nil {
+		t.Fatalf("SearchTargets after ignore: %v", err)
+	}
+	for _, r := range found {
+		if r.Platform == platform {
+			t.Fatalf("ignored program leaked via %s search: %+v", r.Source, r)
+		}
+	}
+}
+
+func TestIntegration_ListEntriesSinceUsesRawLastSeen(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{
+			URI:      "since.example.com",
+			Category: "url",
+			InScope:  true,
+			Variants: []TargetVariant{{Value: "since.example.com"}},
+		},
+	})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+
+	if _, err := db.sql.Exec(`
+		UPDATE targets_ai_enhanced
+		SET last_seen_at = NOW() - INTERVAL '2 days'
+		WHERE target_id IN (
+			SELECT t.id FROM targets_raw t
+			JOIN programs p ON p.id = t.program_id
+			WHERE p.platform = $1
+		)
+	`, platform); err != nil {
+		t.Fatalf("staling AI last_seen_at: %v", err)
+	}
+
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
+		t.Fatalf("second upsert: %v", err)
+	}
+
+	got, err := db.ListEntries(ctx, ListOptions{Platform: platform, Since: time.Now().Add(-time.Minute)})
+	if err != nil {
+		t.Fatalf("ListEntries: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("AI-joined row was dropped because --since used the stale AI timestamp")
+	}
+}

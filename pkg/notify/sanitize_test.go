@@ -55,6 +55,10 @@ func TestFormatSlackLink(t *testing.T) {
 	if got := formatSlackLink("javascript:alert(1)", "x"); got != "x" {
 		t.Fatalf("unsafe slack URL should fall back to label, got %q", got)
 	}
+	raw := formatSlackLink("javascript:alert(1)<!everyone>", "")
+	if strings.Contains(raw, "<!everyone>") {
+		t.Fatalf("rejected Slack URL must not return raw mention markup, got %q", raw)
+	}
 }
 
 func TestFormatDiscordLinkAndCode(t *testing.T) {
@@ -81,6 +85,26 @@ func TestFormatDiscordMessageEscapesTypeAndCategory(t *testing.T) {
 		if strings.ContainsAny(f.Value, "*_~`|") && !strings.Contains(f.Value, "\\") {
 			t.Fatalf("expected markdown control chars to be escaped in %s: %q", f.Name, f.Value)
 		}
+	}
+}
+
+func TestFormatDiscordMessageDisablesMentions(t *testing.T) {
+	msg := formatDiscordMessage(ChangeEvent{
+		Type:     "added",
+		Category: "@everyone",
+		Target:   "a\nb@here",
+		Platform: "h1",
+	}, &DiscordConfig{})
+	if msg.AllowedMentions == nil || len(msg.AllowedMentions.Parse) != 0 {
+		t.Fatalf("expected allowed_mentions.parse to be empty, got %+v", msg.AllowedMentions)
+	}
+	for _, f := range msg.Embeds[0].Fields {
+		if f.Name == "Category" && strings.Contains(f.Value, "@everyone") {
+			t.Fatalf("category still contains a live @everyone mention: %q", f.Value)
+		}
+	}
+	if strings.Contains(msg.Embeds[0].Description, "\n") {
+		t.Fatalf("target newlines must not break the inline code span: %q", msg.Embeds[0].Description)
 	}
 }
 

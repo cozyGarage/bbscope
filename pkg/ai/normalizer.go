@@ -526,24 +526,94 @@ func variantAllowed(original, variant string) bool {
 		}
 	}
 
+	// Wildcards in the variant always widen (example.com ↛ *.example.com).
+	if strings.Contains(variant, "*") {
+		return false
+	}
+
+	vHost := variantHost(variant)
+	if vHost == "" {
+		return false
+	}
+
 	base := cleanScopeBase(original)
 	if base == "" {
 		return false
 	}
-	// Restating the base, or narrowing to a subdomain beneath it.
-	if variant == base || strings.HasSuffix(variant, "."+base) {
-		return true
+
+	if strings.Contains(base, ".") {
+		if vHost == base {
+			// Restating the host of a path-scoped URL (https://example.com/api)
+			// would widen to the whole origin. Wildcard-host originals like
+			// https://*.example.com/** are the whole origin already.
+			return !originalHasRestrictivePath(original)
+		}
+		if strings.HasSuffix(vHost, "."+base) {
+			prefix := strings.TrimSuffix(vHost, "."+base)
+			return prefix != "" && isDNSLabelPath(prefix)
+		}
+		return false
 	}
+
 	// Completing a right-truncated original such as "example.*": the base is a
 	// bare label and the variant must resolve to exactly that label plus a
-	// public suffix, so "example.com" is accepted while "example.com.evil.net"
-	// (registrable domain "evil.net") is not.
-	if !strings.Contains(base, ".") && strings.HasPrefix(variant, base+".") {
-		if root, ok := storage.ExtractRootDomain(variant); ok && root == variant {
+	// public suffix, so "example.com" is accepted while "evil.app" (suffix
+	// ".app") and "example.com.evil.net" are not.
+	if strings.HasPrefix(vHost, base+".") {
+		if root, ok := storage.ExtractRootDomain(vHost); ok && root == vHost {
 			return true
 		}
 	}
 	return false
+}
+
+// variantHost extracts a hostname from a variant, ignoring scheme, path, userinfo
+// and port so suffix checks cannot be fooled by http://evil.com/x.example.com.
+func variantHost(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	if idx := strings.IndexAny(s, "/?#"); idx >= 0 {
+		s = s[:idx]
+	}
+	if at := strings.LastIndex(s, "@"); at >= 0 {
+		s = s[at+1:]
+	}
+	if i := strings.LastIndex(s, ":"); i >= 0 && !strings.Contains(s, "]") {
+		s = s[:i]
+	}
+	return strings.Trim(s, ".")
+}
+
+func originalHasRestrictivePath(original string) bool {
+	s := strings.ToLower(strings.TrimSpace(original))
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	idx := strings.IndexAny(s, "/?#")
+	if idx < 0 {
+		return false
+	}
+	path := s[idx:]
+	switch path {
+	case "/", "/*", "/**", "?", "#":
+		return false
+	}
+	if strings.HasPrefix(path, "/**") || strings.HasPrefix(path, "/*") {
+		return false
+	}
+	return true
+}
+
+func isDNSLabelPath(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, part := range strings.Split(s, ".") {
+		if part == "" || strings.ContainsAny(part, "/*?#[]:") {
+			return false
+		}
+	}
+	return true
 }
 
 func expandAlternationCandidates(original string) []string {

@@ -65,6 +65,9 @@ func (c *changeNotifier) Dispatch(ctx context.Context, changes []storage.Change)
 	defer c.mu.Unlock()
 
 	for _, change := range changes {
+		if err := ctx.Err(); err != nil {
+			return
+		}
 		event := changeToEvent(change)
 		for _, n := range c.notifiers {
 			if err := n.Send(ctx, event); err != nil {

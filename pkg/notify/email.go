@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/smtp"
 	"time"
 )
@@ -27,6 +28,9 @@ func (e *EmailNotifier) Name() string {
 
 // Send sends a notification via email
 func (e *EmailNotifier) Send(ctx context.Context, event ChangeEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if e.config == nil || len(e.config.To) == 0 {
 		return fmt.Errorf("email notifier: no recipients configured")
 	}
@@ -81,7 +85,8 @@ func (e *EmailNotifier) sendWithTLS(addr, message string) error {
 	}
 
 	// Connect with TLS
-	conn, err := tls.Dial("tcp", addr, tlsConfig)
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("TLS dial failed: %w", err)
 	}
@@ -121,10 +126,12 @@ func (e *EmailNotifier) sendWithTLS(addr, message string) error {
 	if err != nil {
 		return fmt.Errorf("DATA command failed: %w", err)
 	}
-	defer wc.Close()
-
 	if _, err := wc.Write([]byte(message)); err != nil {
+		_ = wc.Close()
 		return fmt.Errorf("failed to write message: %w", err)
+	}
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("failed to finish message: %w", err)
 	}
 
 	return nil

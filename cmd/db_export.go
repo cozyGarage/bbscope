@@ -53,7 +53,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	opts := storage.ListOptions{
 		Platform:        platform,
 		IncludeOOS:      true, // Export everything by default
-		IncludeIgnored:  false,
+		IncludeIgnored:  true, // Backups must include ignored programs or a restore drops them
 		IncludeDisabled: true, // Include soft-disabled programs in backups
 	}
 
