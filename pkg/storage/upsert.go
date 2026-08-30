@@ -75,7 +75,26 @@ func (d *DB) getOrCreateProgramTx(ctx context.Context, tx *sql.Tx, programURL, p
 	return programID, nil
 }
 
+// UpsertOptions controls optional behavior of an upsert.
+type UpsertOptions struct {
+	// SkipChangeLog suppresses the scope_changes rows for this upsert. A
+	// platform's first poll sets it: every target would otherwise be recorded as
+	// an addition, burying later real changes under the initial import.
+	SkipChangeLog bool
+}
+
+// UpsertProgramEntries reconciles a program's scope against the entries a poll
+// produced and returns the detected changes.
+//
+// The returned changes have already been written to scope_changes as part of the
+// same transaction; callers must not pass them to LogChanges. They are returned
+// so callers can display or forward them.
 func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, handle string, entries []UpsertEntry) ([]Change, error) {
+	return d.UpsertProgramEntriesWithOptions(ctx, programURL, platform, handle, entries, UpsertOptions{})
+}
+
+// UpsertProgramEntriesWithOptions is UpsertProgramEntries with explicit options.
+func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, platform, handle string, entries []UpsertEntry, opts UpsertOptions) ([]Change, error) {
 	now := time.Now().UTC()
 	programURL = NormalizeProgramURL(programURL)
 
@@ -693,6 +712,15 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM targets_raw WHERE id = ANY($1::bigint[])`, pgtype.FlatArray[int64](ids)); err != nil {
 			return nil, fmt.Errorf("batch deleting targets: %w", err)
+		}
+	}
+
+	// Audit rows go in the same transaction as the mutation they describe, so a
+	// failure here rolls the scope change back rather than leaving the database
+	// updated with no record of what happened.
+	if !opts.SkipChangeLog {
+		if err := logChangesTx(ctx, tx, changes); err != nil {
+			return nil, fmt.Errorf("logging scope changes: %w", err)
 		}
 	}
 

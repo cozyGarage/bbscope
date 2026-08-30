@@ -144,6 +144,15 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		concurrency = 5 // Default to 5 if invalid
 	}
 
+	// Change detection only happens on the --db path, so there is nothing to
+	// notify about without it. Warn rather than fail, since a config file shared
+	// between DB and non-DB invocations is a reasonable setup.
+	notifier := loadChangeNotifier()
+	if notifier != nil && !useDB {
+		utils.Log.Warn("Notifications are configured but require --db, which detects the changes to notify about")
+		notifier = nil
+	}
+
 	for _, p := range pollers {
 		utils.Log.Infof("Fetching scope from %s...", p.Name())
 
@@ -211,7 +220,7 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		}
 
 		// Use concurrent processing with worker pool pattern
-		polledProgramURLs, err := processProgramsConcurrently(ctx, cmd, p, handles, opts, useDB, db, ignoredPrograms, isFirstRunForPlatform, concurrency, aiNormalizer, since)
+		polledProgramURLs, err := processProgramsConcurrently(ctx, cmd, p, handles, opts, useDB, db, ignoredPrograms, isFirstRunForPlatform, concurrency, aiNormalizer, since, notifier)
 		if err != nil {
 			// Do not abort remaining platforms, and skip SyncPlatformPrograms: a partial
 			// success list would incorrectly disable programs that only failed to fetch.
@@ -230,13 +239,12 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 					utils.Log.Warnf("Failed to sync removed programs for platform %s: %v", p.Name(), err)
 				}
 			}
+			// SyncPlatformPrograms logs its own removals transactionally. On a
+			// platform's first run there is nothing in the database to remove, so
+			// this list is empty and needs no first-run suppression.
 			if !isFirstRunForPlatform {
 				printChanges(removedProgramChanges, since)
-			}
-			if !isFirstRunForPlatform {
-				if err := db.LogChanges(ctx, removedProgramChanges); err != nil {
-					utils.Log.Warnf("Could not log removed program changes for platform %s: %v", p.Name(), err)
-				}
+				notifier.Dispatch(ctx, removedProgramChanges)
 			}
 		}
 	}
@@ -244,7 +252,7 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 }
 
 // processProgramsConcurrently processes programs using a worker pool pattern for concurrent fetching.
-func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p platforms.PlatformPoller, handles []string, opts platforms.PollOptions, useDB bool, db *storage.DB, ignoredPrograms map[string]bool, isFirstRunForPlatform bool, concurrency int, aiNormalizer ai.Normalizer, since time.Time) ([]string, error) {
+func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p platforms.PlatformPoller, handles []string, opts platforms.PollOptions, useDB bool, db *storage.DB, ignoredPrograms map[string]bool, isFirstRunForPlatform bool, concurrency int, aiNormalizer ai.Normalizer, since time.Time, notifier *changeNotifier) ([]string, error) {
 	if len(handles) == 0 {
 		return []string{}, nil
 	}
@@ -377,7 +385,17 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 					continue
 				}
 
-				changes, err := db.UpsertProgramEntries(ctx, storage.NormalizeProgramURL(pd.Url), p.Name(), h, entries)
+				// The upsert writes scope_changes inside its own transaction, so
+				// the first run for a platform must suppress logging there rather
+				// than by skipping a separate LogChanges call afterwards.
+				changes, err := db.UpsertProgramEntriesWithOptions(
+					ctx,
+					storage.NormalizeProgramURL(pd.Url),
+					p.Name(),
+					h,
+					entries,
+					storage.UpsertOptions{SkipChangeLog: isFirstRunForPlatform},
+				)
 
 				if err != nil {
 					if errors.Is(err, storage.ErrAbortingScopeWipe) {
@@ -397,11 +415,7 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 				// Print changes (thread-safe - fmt.Printf is safe for concurrent use)
 				if !isFirstRunForPlatform {
 					printChanges(changes, since)
-				}
-				if !isFirstRunForPlatform {
-					if err := db.LogChanges(ctx, changes); err != nil {
-						utils.Log.Warnf("Could not log changes for program %s: %v", pd.Url, err)
-					}
+					notifier.Dispatch(ctx, changes)
 				}
 			}
 		}()

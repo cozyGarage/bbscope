@@ -183,18 +183,27 @@ func TestShouldAbortPartialSync(t *testing.T) {
 		want        bool
 	}{
 		{"no removals", 10, 0, false},
-		{"exactly half", 10, 5, false},
 		{"more than half", 10, 6, true},
 		{"larger platform over ratio", 100, 51, true},
+		{"larger platform under ratio", 100, 49, false},
+
+		// Exactly half is aborted: that much churn in one poll is already well
+		// outside normal behavior and is the signature of a truncated response.
+		{"exactly half", 10, 5, true},
+		{"small platform at ratio", 4, 2, true},
 
 		// The ratio applies at every scale. These previously returned false
 		// because platforms with fewer than ten active programs were exempt,
 		// which let one bad poll disable every program a small platform had.
 		{"small platform wiped entirely", 9, 9, true},
 		{"small platform over ratio", 4, 3, true},
-		{"small platform at ratio", 4, 2, false},
+
+		// A two-program platform hits the half mark on one genuine removal, so
+		// the ratio is not applied there; a full wipe is still refused.
 		{"two programs, one removed", 2, 1, false},
 		{"two programs, both removed", 2, 2, true},
+		{"three programs, one removed", 3, 1, false},
+		{"three programs, two removed", 3, 2, true},
 
 		// A one-program platform has no ratio that separates a genuine removal
 		// from a bad poll; refusing it would strand the platform permanently.
