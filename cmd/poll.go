@@ -230,13 +230,11 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 					utils.Log.Warnf("Failed to sync removed programs for platform %s: %v", p.Name(), err)
 				}
 			}
+			// SyncPlatformPrograms logs its own removals transactionally. On a
+			// platform's first run there is nothing in the database to remove, so
+			// this list is empty and needs no first-run suppression.
 			if !isFirstRunForPlatform {
 				printChanges(removedProgramChanges, since)
-			}
-			if !isFirstRunForPlatform {
-				if err := db.LogChanges(ctx, removedProgramChanges); err != nil {
-					utils.Log.Warnf("Could not log removed program changes for platform %s: %v", p.Name(), err)
-				}
 			}
 		}
 	}
@@ -377,7 +375,17 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 					continue
 				}
 
-				changes, err := db.UpsertProgramEntries(ctx, storage.NormalizeProgramURL(pd.Url), p.Name(), h, entries)
+				// The upsert writes scope_changes inside its own transaction, so
+				// the first run for a platform must suppress logging there rather
+				// than by skipping a separate LogChanges call afterwards.
+				changes, err := db.UpsertProgramEntriesWithOptions(
+					ctx,
+					storage.NormalizeProgramURL(pd.Url),
+					p.Name(),
+					h,
+					entries,
+					storage.UpsertOptions{SkipChangeLog: isFirstRunForPlatform},
+				)
 
 				if err != nil {
 					if errors.Is(err, storage.ErrAbortingScopeWipe) {
@@ -397,11 +405,6 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 				// Print changes (thread-safe - fmt.Printf is safe for concurrent use)
 				if !isFirstRunForPlatform {
 					printChanges(changes, since)
-				}
-				if !isFirstRunForPlatform {
-					if err := db.LogChanges(ctx, changes); err != nil {
-						utils.Log.Warnf("Could not log changes for program %s: %v", pd.Url, err)
-					}
 				}
 			}
 		}()

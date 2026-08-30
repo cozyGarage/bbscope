@@ -292,6 +292,151 @@ func TestIntegration_ListEntriesPlatformFilterIgnoresCase(t *testing.T) {
 	}
 }
 
+// changeCountFor counts the audit rows recorded for one platform.
+func changeCountFor(t *testing.T, db *DB, ctx context.Context, platform string) int {
+	t.Helper()
+	var n int
+	if err := db.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM scope_changes WHERE platform = $1`, platform).Scan(&n); err != nil {
+		t.Fatalf("counting scope_changes: %v", err)
+	}
+	return n
+}
+
+// TestIntegration_UpsertLogsChangesInSameTransaction pins the atomicity fix:
+// the audit rows must land as part of the upsert, not via a separate call the
+// caller might never make (or that might fail after the scope already changed).
+func TestIntegration_UpsertLogsChangesInSameTransaction(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: "atomic-one.example.com", Category: "url", InScope: true},
+		{URI: "atomic-two.example.com", Category: "url", InScope: true},
+	})
+	changes, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries)
+	if err != nil {
+		t.Fatalf("UpsertProgramEntries: %v", err)
+	}
+	if len(changes) != 2 {
+		t.Fatalf("expected 2 changes, got %d", len(changes))
+	}
+
+	if got := changeCountFor(t, db, ctx, platform); got != 2 {
+		t.Errorf("scope_changes rows = %d, want 2 written by the upsert itself", got)
+	}
+}
+
+// TestIntegration_UpsertSkipChangeLog covers the first-poll path, where logging
+// every target as an addition would bury later real changes.
+func TestIntegration_UpsertSkipChangeLog(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+	programURL := "https://example.com/" + platform + "/a"
+
+	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
+		{URI: "first-run.example.com", Category: "url", InScope: true},
+	})
+	changes, err := db.UpsertProgramEntriesWithOptions(ctx, programURL, platform, "a", entries, UpsertOptions{SkipChangeLog: true})
+	if err != nil {
+		t.Fatalf("UpsertProgramEntriesWithOptions: %v", err)
+	}
+	// The caller still learns what changed; only the audit write is suppressed.
+	if len(changes) != 1 {
+		t.Errorf("expected the change to still be reported, got %d", len(changes))
+	}
+	if got := changeCountFor(t, db, ctx, platform); got != 0 {
+		t.Errorf("scope_changes rows = %d, want 0 when SkipChangeLog is set", got)
+	}
+}
+
+// TestIntegration_SyncLogsRemovalsInSameTransaction covers the sync half of the
+// same guarantee, and confirms the disable and its audit row agree.
+func TestIntegration_SyncLogsRemovalsInSameTransaction(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+
+	// Four programs so that removing one stays under the partial-sync ratio.
+	var urls []string
+	for _, name := range []string{"a", "b", "c", "d"} {
+		u := "https://example.com/" + platform + "/" + name
+		urls = append(urls, u)
+		entries := mustBuildEntries(t, u, platform, name, []TargetItem{
+			{URI: name + ".example.com", Category: "url", InScope: true},
+		})
+		if _, err := db.UpsertProgramEntriesWithOptions(ctx, u, platform, name, entries, UpsertOptions{SkipChangeLog: true}); err != nil {
+			t.Fatalf("seeding %s: %v", u, err)
+		}
+	}
+
+	// Poll returns everything except the last program.
+	removed, err := db.SyncPlatformPrograms(ctx, platform, urls[:3])
+	if err != nil {
+		t.Fatalf("SyncPlatformPrograms: %v", err)
+	}
+	if len(removed) != 1 {
+		t.Fatalf("expected 1 removal, got %d", len(removed))
+	}
+
+	if got := changeCountFor(t, db, ctx, platform); got != 1 {
+		t.Errorf("scope_changes rows = %d, want 1 written by the sync itself", got)
+	}
+
+	var disabled int
+	if err := db.sql.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM programs WHERE platform = $1 AND disabled = 1`, platform).Scan(&disabled); err != nil {
+		t.Fatalf("counting disabled programs: %v", err)
+	}
+	if disabled != 1 {
+		t.Errorf("disabled programs = %d, want 1 (audit row and disable must agree)", disabled)
+	}
+}
+
+// TestIntegration_SyncAbortWritesNothing confirms the partial-sync guard leaves
+// no trace: no disables, and no audit rows describing disables that never
+// happened.
+func TestIntegration_SyncAbortWritesNothing(t *testing.T) {
+	db := openTestDB(t)
+	platform := uniquePlatform(t)
+	cleanupPlatform(t, db, platform)
+	ctx := context.Background()
+
+	var urls []string
+	for _, name := range []string{"a", "b", "c", "d"} {
+		u := "https://example.com/" + platform + "/" + name
+		urls = append(urls, u)
+		entries := mustBuildEntries(t, u, platform, name, []TargetItem{
+			{URI: name + ".example.com", Category: "url", InScope: true},
+		})
+		if _, err := db.UpsertProgramEntriesWithOptions(ctx, u, platform, name, entries, UpsertOptions{SkipChangeLog: true}); err != nil {
+			t.Fatalf("seeding %s: %v", u, err)
+		}
+	}
+
+	// A truncated poll returning only one of four programs trips the guard.
+	if _, err := db.SyncPlatformPrograms(ctx, platform, urls[:1]); !errors.Is(err, ErrAbortingPartialSync) {
+		t.Fatalf("expected ErrAbortingPartialSync, got %v", err)
+	}
+
+	var disabled int
+	if err := db.sql.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM programs WHERE platform = $1 AND disabled = 1`, platform).Scan(&disabled); err != nil {
+		t.Fatalf("counting disabled programs: %v", err)
+	}
+	if disabled != 0 {
+		t.Errorf("disabled programs = %d, want 0 after an aborted sync", disabled)
+	}
+	if got := changeCountFor(t, db, ctx, platform); got != 0 {
+		t.Errorf("scope_changes rows = %d, want 0 after an aborted sync", got)
+	}
+}
+
 // statsFor returns the PlatformStats row for one platform, failing if absent.
 func statsFor(t *testing.T, db *DB, ctx context.Context, platform string) PlatformStats {
 	t.Helper()
@@ -318,12 +463,10 @@ func TestIntegration_ListRecentChanges(t *testing.T) {
 	entries := mustBuildEntries(t, programURL, platform, "a", []TargetItem{
 		{URI: "recent.example.com", Category: "url", InScope: true},
 	})
-	changes, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries)
-	if err != nil {
+	// No explicit LogChanges call: the upsert records its own audit rows inside
+	// the transaction that performed the mutation.
+	if _, err := db.UpsertProgramEntries(ctx, programURL, platform, "a", entries); err != nil {
 		t.Fatalf("UpsertProgramEntries: %v", err)
-	}
-	if err := db.LogChanges(ctx, changes); err != nil {
-		t.Fatalf("LogChanges: %v", err)
 	}
 
 	recent, err := db.ListRecentChanges(ctx, 100)

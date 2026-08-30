@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // SetProgramIgnoredStatus sets the is_ignored flag for a program.
@@ -59,6 +61,9 @@ func (d *DB) GetActiveProgramCount(ctx context.Context, platform string) (int, e
 // SyncPlatformPrograms marks programs that are no longer returned by a platform's API as 'disabled'
 // and logs their removal as a single event, preventing spam from individual target removals.
 // Targets are retained (soft-disable only) so a bad poll cannot permanently wipe scope data.
+//
+// The returned changes have already been written to scope_changes as part of the
+// same transaction; callers must not pass them to LogChanges.
 func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledProgramURLs []string) ([]Change, error) {
 	now := time.Now().UTC()
 	changes := make([]Change, 0)
@@ -71,16 +76,34 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 		}
 	}
 
-	// 2. Get all active programs for this platform from the DB (read operation, no transaction needed).
-	rows, err := d.sql.QueryContext(ctx, `
+	// 2. Read the active programs, disable the absent ones, and log the removals
+	// in one transaction. Reading outside a transaction and then disabling in
+	// per-program transactions left a window where a concurrent poll could
+	// re-enable a program between the two, and a commit failure partway through
+	// the loop returned change records for programs that were never disabled.
+	tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("starting sync transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// FOR UPDATE holds the rows for the lifetime of the transaction so a
+	// concurrent sync or upsert cannot act on the same snapshot.
+	rows, err := tx.QueryContext(ctx, `
 		SELECT p.id, p.url, p.handle
 		FROM programs p
 		WHERE p.platform = $1 AND p.disabled = 0 AND p.is_ignored = 0
+		ORDER BY p.id
+		FOR UPDATE
 	`, platform)
 	if err != nil {
 		return nil, fmt.Errorf("querying for active programs: %w", err)
 	}
-	defer rows.Close()
 
 	type programToRemove struct {
 		ID     int64
@@ -93,6 +116,7 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 	for rows.Next() {
 		var p programToRemove
 		if err := rows.Scan(&p.ID, &p.URL, &p.Handle); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		activeCount++
@@ -101,31 +125,35 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 		}
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
 		return nil, err
 	}
+	rows.Close()
 
 	if shouldAbortPartialSync(activeCount, len(toRemove)) {
 		return nil, fmt.Errorf("%w: would disable %d of %d active %s programs",
 			ErrAbortingPartialSync, len(toRemove), activeCount, platform)
 	}
 
-	// 3. For each program that was not in the latest poll, process its removal
-	// in its own short-lived transaction to avoid long-held locks.
+	if len(toRemove) == 0 {
+		committed = true
+		return changes, tx.Commit()
+	}
+
+	// 3. Disable every absent program in one statement.
+	ids := make([]int64, len(toRemove))
+	for i, p := range toRemove {
+		ids[i] = p.ID
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE programs SET disabled = 1 WHERE id = ANY($1::bigint[])`, pgtype.FlatArray[int64](ids)); err != nil {
+		return nil, fmt.Errorf("disabling %d programs: %w", len(ids), err)
+	}
+
+	// 4. One "removed" event per program, rather than per target, so a program
+	// leaving a platform does not spam the change log.
 	for _, p := range toRemove {
-		tx, err := d.sql.BeginTx(ctx, &sql.TxOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("starting transaction for program removal %d: %w", p.ID, err)
-		}
-
-		// Mark the program as disabled
-		if _, err := tx.ExecContext(ctx, `UPDATE programs SET disabled = 1 WHERE id = $1`, p.ID); err != nil {
-			_ = tx.Rollback()
-			return nil, fmt.Errorf("disabling program %d: %w", p.ID, err)
-		}
-
-		// Create a single "removed" change event for the entire program
 		normalizedProgramURL := NormalizeProgramURL(p.URL)
-		change := Change{
+		changes = append(changes, Change{
 			OccurredAt:       now,
 			ProgramURL:       normalizedProgramURL,
 			Platform:         platform,
@@ -136,17 +164,27 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 			InScope:          false,
 			IsBBP:            false,
 			ChangeType:       "removed",
-		}
-		changes = append(changes, change)
-
-		if err := tx.Commit(); err != nil {
-			return nil, fmt.Errorf("committing transaction for program removal %d: %w", p.ID, err)
-		}
+		})
 	}
+
+	if err := logChangesTx(ctx, tx, changes); err != nil {
+		return nil, fmt.Errorf("logging program removals: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing sync transaction: %w", err)
+	}
+	committed = true
 
 	return changes, nil
 }
 
+// LogChanges records changes in their own transaction.
+//
+// UpsertProgramEntries and SyncPlatformPrograms already write their own audit
+// rows inside the transaction that performs the mutation, so callers of those
+// two must not pass the returned slice here as well — it would double-log.
+// This remains available for callers that produce changes by other means.
 func (d *DB) LogChanges(ctx context.Context, changes []Change) error {
 	if len(changes) == 0 {
 		return nil
@@ -158,6 +196,22 @@ func (d *DB) LogChanges(ctx context.Context, changes []Change) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if err := logChangesTx(ctx, tx, changes); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// logChangesTx appends audit rows using a caller-supplied transaction, so the
+// scope mutation and its audit trail commit or roll back together. Logging in a
+// separate transaction meant a crash in between left the scope updated with no
+// record of what changed.
+func logChangesTx(ctx context.Context, tx *sql.Tx, changes []Change) error {
+	if len(changes) == 0 {
+		return nil
+	}
+
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO scope_changes(occurred_at, program_url, platform, handle, target_normalized, target_raw, target_ai_normalized, category, in_scope, is_bbp, change_type) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`)
 	if err != nil {
 		return err
@@ -167,11 +221,11 @@ func (d *DB) LogChanges(ctx context.Context, changes []Change) error {
 	for _, c := range changes {
 		_, err := stmt.ExecContext(ctx, c.OccurredAt, c.ProgramURL, c.Platform, c.Handle, c.TargetNormalized, c.TargetRaw, c.TargetAINormalized, c.Category, boolToInt(c.InScope), boolToInt(c.IsBBP), c.ChangeType)
 		if err != nil {
-			return err // Rollback will be called
+			return err
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 // AddCustomTarget adds a single target for a custom program.

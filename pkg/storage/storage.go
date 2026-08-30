@@ -33,6 +33,10 @@ const (
 	redactedPlaceholder = "****"
 
 	syncPartialDisableMaxRatio = 0.5
+
+	// syncRatioMinActivePrograms is the smallest platform the half-removal ratio
+	// is applied to. Below it a single legitimate removal already reaches half.
+	syncRatioMinActivePrograms = 3
 )
 
 // redactConnectionString redacts the password from a connection string for safe
@@ -279,16 +283,29 @@ func identityKey(raw, category string) string {
 // fewer than ten active programs, which let a single bad poll disable every
 // program a small platform had.
 func shouldAbortPartialSync(activeCount, removeCount int) bool {
-	if activeCount <= 0 || removeCount <= 0 {
+	if removeCount <= 0 {
 		return false
 	}
 	// Removing a lone program from a one-program platform is a legitimate,
 	// unambiguous removal; there is no ratio that can distinguish it from a bad
 	// poll, and refusing it would strand the platform permanently.
-	if activeCount == 1 {
+	if activeCount <= 1 {
 		return false
 	}
-	return float64(removeCount) > float64(activeCount)*syncPartialDisableMaxRatio
+	// No poll legitimately removes every program a platform has.
+	if removeCount >= activeCount {
+		return true
+	}
+	// A two-program platform reaches the half mark on a single genuine removal,
+	// so the ratio cannot discriminate there. The full-wipe check above still
+	// covers the dangerous case.
+	if activeCount < syncRatioMinActivePrograms {
+		return false
+	}
+	// Disabling half or more in one poll is the signature of a truncated
+	// response. This is >= rather than >: an exactly-half removal is already
+	// well outside normal churn.
+	return float64(removeCount) >= float64(activeCount)*syncPartialDisableMaxRatio
 }
 
 // splitPlatformList parses a comma-separated --platform filter (e.g. "h1,bc")
