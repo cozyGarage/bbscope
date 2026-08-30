@@ -50,8 +50,11 @@ type Normalizer interface {
 }
 
 const (
-	defaultProvider       = "openai"
-	defaultModel          = "gpt-4.1-mini"
+	defaultProvider = "openai"
+	// Must match the ai.model default registered in cmd/root.go and the value
+	// documented in the README, so a library caller that omits Model gets the
+	// same model the CLI would use.
+	defaultModel          = "gpt-4o-mini"
 	defaultEndpoint       = "https://api.openai.com/v1/chat/completions"
 	defaultMaxBatchSize   = 25
 	defaultMaxConcurrency = 10

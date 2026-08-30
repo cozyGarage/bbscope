@@ -373,6 +373,7 @@ var addCmd = &cobra.Command{
 		defer db.Close()
 
 		targets := strings.Split(target, ",")
+		failed := 0
 		for _, t := range targets {
 			t = strings.TrimSpace(t)
 			if t == "" {
@@ -380,16 +381,24 @@ var addCmd = &cobra.Command{
 			}
 			if err := validateCustomTarget(category, t); err != nil {
 				fmt.Fprintf(os.Stderr, "Skipping invalid target %s: %v\n", t, err)
+				failed++
 				continue
 			}
 			created, err := db.AddCustomTarget(context.Background(), t, category, programURL)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error adding target %s: %v\n", t, err)
+				failed++
 			} else if created {
 				fmt.Printf("Successfully added target: %s\n", t)
 			} else {
 				fmt.Printf("Target already exists, refreshed timestamp: %s\n", t)
 			}
+		}
+		// Individual failures were reported above; the exit status reports that
+		// the command as a whole did not do everything it was asked to.
+		if failed > 0 {
+			cmd.SilenceUsage = true
+			return fmt.Errorf("%d of %d target(s) could not be added", failed, len(targets))
 		}
 		return nil
 	},

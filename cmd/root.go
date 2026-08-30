@@ -73,7 +73,10 @@ func ExecuteContext(ctx context.Context) {
 	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		if ctx.Err() != nil {
+		// Only a genuine cancellation is a clean exit. Testing ctx.Err() alone
+		// swallowed every unrelated failure that happened to race with Ctrl-C,
+		// reporting success for a run that did not succeed.
+		if errors.Is(err, context.Canceled) {
 			utils.Log.Info("Shutting down gracefully...")
 			os.Exit(0)
 		}

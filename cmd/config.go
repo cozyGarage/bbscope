@@ -76,8 +76,10 @@ Example:
 		source := credentials.GetSource(key)
 
 		if value == "" {
-			fmt.Printf("✗ %s not found (checked keychain and config)\n", key)
-			return nil
+			// A non-zero exit lets scripts branch on "is this credential set?"
+			// without parsing stdout.
+			cmd.SilenceUsage = true
+			return fmt.Errorf("%s not found (checked keychain and config)", key)
 		}
 
 		// Mask the value for security (show first 4 and last 4 chars)
@@ -185,6 +187,11 @@ config file for extra security.`,
 			fmt.Println()
 			fmt.Println("You can now remove these credentials from ~/.bbscope.yaml")
 			fmt.Println("for extra security. bbscope will use the keychain instead.")
+		}
+
+		if failed > 0 {
+			cmd.SilenceUsage = true
+			return fmt.Errorf("%d credential(s) could not be migrated", failed)
 		}
 
 		return nil

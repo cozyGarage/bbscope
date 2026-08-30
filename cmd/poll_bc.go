@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/cozyGarage/bbscope/v2/internal/utils"
-	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	bcplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/bugcrowd"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
@@ -18,9 +18,9 @@ var pollBcCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		token, _ := cmd.Flags().GetString("token") // Token is CLI-only, not from config
 		// Use credentials package (checks keychain first, then config file)
-		email := credentials.Get("bugcrowd.email")
-		password := credentials.Get("bugcrowd.password")
-		otpSecret := credentials.Get("bugcrowd.otpsecret")
+		email := flagOrCredential(cmd, "email", "bugcrowd.email")
+		password := flagOrCredential(cmd, "password", "bugcrowd.password")
+		otpSecret := flagOrCredential(cmd, "otp-secret", "bugcrowd.otpsecret")
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
 			if err := whttp.SetupProxy(proxy); err != nil {
@@ -30,8 +30,8 @@ var pollBcCmd = &cobra.Command{
 
 		// Validate auth: require either token OR (email+password+otp-secret)
 		if token == "" && (email == "" || password == "" || otpSecret == "") {
-			utils.Log.Error("bugcrowd requires either token or email+password+otp-secret.")
-			return nil
+			cmd.SilenceUsage = true
+			return errors.New("bugcrowd requires either token or email+password+otp-secret")
 		}
 
 		poller := &bcplatform.Poller{}
@@ -44,7 +44,7 @@ var pollBcCmd = &cobra.Command{
 
 func init() {
 	pollCmd.AddCommand(pollBcCmd)
-	pollBcCmd.Flags().StringP("token", "t", "", "Bugcrowd _crowdcontrol_session_key cookie value")
+	pollBcCmd.Flags().StringP("token", "t", "", "Bugcrowd _bugcrowd_session cookie value")
 	pollBcCmd.Flags().StringP("email", "E", "", "Bugcrowd login email")
 	pollBcCmd.Flags().StringP("password", "P", "", "Bugcrowd login password")
 	pollBcCmd.Flags().StringP("otp-secret", "O", "", "Bugcrowd TOTP secret (base32)")

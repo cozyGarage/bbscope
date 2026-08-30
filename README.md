@@ -445,8 +445,12 @@ Upgrading from the old `sw33tLie/bbscope` module path? See
 Poll all platforms automatically every hour:
 
 ```bash
-bbscope daemon --interval 1h --db -b -p
+bbscope daemon --interval 1h --db
 ```
+
+> `daemon` accepts only `--interval`, `--platforms`, `--db`, `--ai` and `--pid-file`.
+> Scope filters such as `-b`/`--bbp-only` and `-p`/`--private-only` are `poll` flags
+> and are not available here.
 
 **2. Daemon with Specific Platforms**
 
