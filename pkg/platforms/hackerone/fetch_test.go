@@ -108,6 +108,20 @@ func TestFetchProgramScope(t *testing.T) {
 	}
 }
 
+func TestFetchProgramScope_Non200WithData(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"data":[],"errors":[{"detail":"unauthorized"}]}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := NewPoller("user", "token")
+	if _, err := p.FetchProgramScope(context.Background(), "acme", platforms.PollOptions{Categories: "all"}); err == nil {
+		t.Fatal("expected an error for a 401 body that still contains a data array")
+	}
+}
+
 func TestAllowSameOriginNextURL(t *testing.T) {
 	got, err := allowSameOriginNextURL("https://api.hackerone.com", "https://api.hackerone.com/v1/hackers/programs?page=2")
 	if err != nil {

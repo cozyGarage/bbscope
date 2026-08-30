@@ -1,1 +1,1 @@
-prefix "assets":[{"url":"https://app.acme.com","type":"websites_and_applications","description":"web"},{"url":"0xabc","type":"smart_contract","description":"vault"}] suffix
+prefix "assets":[{"url":"https://app.acme.com","type":"websites_and_applications","description":"web"},{"url":"0xabc","type":"smart_contract","description":"vault"},{"url":"cosmos1xyz","type":"blockchain_dlt","description":"chain"},{"url":"future.example","type":"something_new","description":"future"}] suffix

@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
 	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
@@ -16,6 +19,20 @@ import (
 	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
 )
+
+// flagOrCredential prefers an explicitly-set command-line flag over stored
+// credentials.
+//
+// credentials.Get consults the OS keychain before the config file, and the
+// poll flags are bound to viper, which it only reaches as a fallback. Without
+// this an explicit --token could not override a stale keychain entry, contrary
+// to the documented precedence.
+func flagOrCredential(cmd *cobra.Command, flagName, credentialKey string) string {
+	if f := cmd.Flags().Lookup(flagName); f != nil && f.Changed {
+		return f.Value.String()
+	}
+	return credentials.Get(credentialKey)
+}
 
 // buildPollersFromConfig constructs authenticated platform pollers from keychain/config.
 // platformFilter is a set of short names (h1, bc, it, ywh, immunefi, dev). Empty/nil means all.
@@ -36,6 +53,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 	}
 
 	var pollers []platforms.PlatformPoller
+	var authErrs []error
 
 	if allow("h1") {
 		h1User := credentials.Get("hackerone.username")
@@ -56,6 +74,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 			authCfg := platforms.AuthConfig{Email: bcEmail, Password: bcPass, OtpSecret: bcOTP, Proxy: proxyURL}
 			if err := bcPoller.Authenticate(ctx, authCfg); err != nil {
 				utils.Log.Errorf("Bugcrowd auth failed: %v", err)
+				authErrs = append(authErrs, fmt.Errorf("bugcrowd: %w", err))
 			} else {
 				pollers = append(pollers, bcPoller)
 			}
@@ -70,6 +89,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 			itPoller := itplatform.NewPoller()
 			if err := itPoller.Authenticate(ctx, platforms.AuthConfig{Token: itToken, Proxy: proxyURL}); err != nil {
 				utils.Log.Errorf("Intigriti auth failed: %v", err)
+				authErrs = append(authErrs, fmt.Errorf("intigriti: %w", err))
 			} else {
 				pollers = append(pollers, itPoller)
 			}
@@ -87,6 +107,7 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 			authCfg := platforms.AuthConfig{Email: ywhEmail, Password: ywhPass, OtpSecret: ywhOTP, Proxy: proxyURL}
 			if err := ywhPoller.Authenticate(ctx, authCfg); err != nil {
 				utils.Log.Errorf("YesWeHack auth failed: %v", err)
+				authErrs = append(authErrs, fmt.Errorf("yeswehack: %w", err))
 			} else {
 				pollers = append(pollers, ywhPoller)
 			}
@@ -99,11 +120,14 @@ func buildPollersFromConfig(ctx context.Context, proxyURL string, platformFilter
 		pollers = append(pollers, &implatform.Poller{})
 	}
 
-	if allow("dev") {
+	// The hidden `poll dev` command is the only opt-in for the fixture poller.
+	// allow("dev") is true when the filter is empty ("all platforms"), which
+	// would persist sample example.com programs into a real --db run.
+	if platformFilter["dev"] {
 		pollers = append(pollers, &devplatform.Poller{})
 	}
 
-	return pollers, nil
+	return pollers, errors.Join(authErrs...)
 }
 
 // parsePlatformFilter converts a comma-separated platforms flag into a filter set.

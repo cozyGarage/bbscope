@@ -13,45 +13,37 @@ import (
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
+// ErrProgramURLOwned is returned when a program URL is already stored under a
+// different platform. programs.url is globally unique, so rewriting platform
+// on conflict would steal the row (and its targets) from the owner.
+var ErrProgramURLOwned = errors.New("program URL is already owned by another platform")
+
 // getOrCreateProgramTx upserts a program row inside an existing transaction.
 // programURL is canonicalized via NormalizeProgramURL. Legacy trailing-slash
 // variants are reused when present so we do not create duplicate programs.
+//
+// Lookup is by URL only: UNIQUE(url) is global, so a platform-scoped SELECT
+// misses an existing row and the INSERT's ON CONFLICT used to overwrite
+// platform/handle. We refuse that steal instead.
 func (d *DB) getOrCreateProgramTx(ctx context.Context, tx *sql.Tx, programURL, platform, handle string) (int64, error) {
 	programURL = NormalizeProgramURL(programURL)
 	var programID int64
+	var existingPlatform string
 
 	err := tx.QueryRowContext(ctx, `
-		SELECT id FROM programs
-		WHERE platform = $1 AND (
-			url = $2 OR
-			url = $2 || '/' OR
-			rtrim(url, '/') = rtrim($2, '/')
-		)
+		SELECT id, platform FROM programs
+		WHERE url = $1 OR
+			url = $1 || '/' OR
+			rtrim(url, '/') = rtrim($1, '/')
 		ORDER BY id ASC
 		LIMIT 1
-	`, platform, programURL).Scan(&programID)
+	`, programURL).Scan(&programID, &existingPlatform)
 	if err == nil {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE programs
-			SET platform = $1,
-			    handle = $2,
-			    url = $3,
-			    last_seen_at = CURRENT_TIMESTAMP,
-			    disabled = 0
-			WHERE id = $4
-		`, platform, handle, programURL, programID); err != nil {
-			// URL rewrite can fail if another row already owns the canonical URL.
-			// Fall back to updating metadata without changing url.
-			if _, err2 := tx.ExecContext(ctx, `
-				UPDATE programs
-				SET platform = $1,
-				    handle = $2,
-				    last_seen_at = CURRENT_TIMESTAMP,
-				    disabled = 0
-				WHERE id = $3
-			`, platform, handle, programID); err2 != nil {
-				return 0, fmt.Errorf("updating program: %w", err2)
-			}
+		if !strings.EqualFold(existingPlatform, platform) {
+			return 0, fmt.Errorf("%w: %s belongs to %s", ErrProgramURLOwned, programURL, existingPlatform)
+		}
+		if err := updateOwnedProgramTx(ctx, tx, programID, handle, programURL); err != nil {
+			return 0, err
 		}
 		return programID, nil
 	}
@@ -63,16 +55,58 @@ func (d *DB) getOrCreateProgramTx(ctx context.Context, tx *sql.Tx, programURL, p
 		INSERT INTO programs(platform, handle, url, first_seen_at, last_seen_at)
 		VALUES($1,$2,$3,CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(url) DO UPDATE SET
-			platform = excluded.platform,
 			handle = excluded.handle,
 			last_seen_at = CURRENT_TIMESTAMP,
 			disabled = 0
+		WHERE programs.platform = excluded.platform
 		RETURNING id
 	`, platform, handle, programURL)
 	if err := row.Scan(&programID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("%w: %s", ErrProgramURLOwned, programURL)
+		}
 		return 0, fmt.Errorf("upserting program: %w", err)
 	}
 	return programID, nil
+}
+
+// updateOwnedProgramTx refreshes handle/last_seen and canonicalizes url.
+// The URL rewrite runs inside a savepoint: a unique-violation would otherwise
+// abort the whole transaction and make the metadata-only fallback unreachable.
+func updateOwnedProgramTx(ctx context.Context, tx *sql.Tx, programID int64, handle, programURL string) error {
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT program_url_rewrite`); err != nil {
+		return fmt.Errorf("creating program URL savepoint: %w", err)
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE programs
+		SET handle = $1,
+		    url = $2,
+		    last_seen_at = CURRENT_TIMESTAMP,
+		    disabled = 0
+		WHERE id = $3
+	`, handle, programURL, programID)
+	if err != nil {
+		if _, rbErr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT program_url_rewrite`); rbErr != nil {
+			return fmt.Errorf("updating program: %w", errors.Join(err, rbErr))
+		}
+		if _, relErr := tx.ExecContext(ctx, `RELEASE SAVEPOINT program_url_rewrite`); relErr != nil {
+			return fmt.Errorf("updating program: %w", errors.Join(err, relErr))
+		}
+		if _, err2 := tx.ExecContext(ctx, `
+			UPDATE programs
+			SET handle = $1,
+			    last_seen_at = CURRENT_TIMESTAMP,
+			    disabled = 0
+			WHERE id = $2
+		`, handle, programID); err2 != nil {
+			return fmt.Errorf("updating program: %w", err2)
+		}
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT program_url_rewrite`); err != nil {
+		return fmt.Errorf("releasing program URL savepoint: %w", err)
+	}
+	return nil
 }
 
 // UpsertOptions controls optional behavior of an upsert.
@@ -81,6 +115,12 @@ type UpsertOptions struct {
 	// platform's first poll sets it: every target would otherwise be recorded as
 	// an addition, burying later real changes under the initial import.
 	SkipChangeLog bool
+
+	// MergeOnly adds and updates entries present in the payload but does not
+	// delete targets or variants that are missing. `db import` uses it so a
+	// partial file or stale backup cannot wipe live scope. Platform polls leave
+	// it false so they still reconcile.
+	MergeOnly bool
 }
 
 // UpsertProgramEntries reconciles a program's scope against the entries a poll
@@ -201,17 +241,23 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 		}
 	}
 
-	needsVariantUpdate := func(existing *existingVariant, desired *EntryVariant) bool {
-		if desired.HasInScope != existing.HasInScope {
+	needsVariantUpdate := func(existing *existingVariant, desired *EntryVariant, parent UpsertEntry) bool {
+		// NULL category/in_scope means "inherit the parent". Incoming variants
+		// often set HasInScope/HasCategory even when the value matches the
+		// parent; treating that as a change produced phantom "updated" rows
+		// on every identical re-upsert.
+		desiredHasIS := desired.HasInScope && desired.InScope != parent.InScope
+		if desiredHasIS != existing.HasInScope {
 			return true
 		}
-		if desired.HasInScope && existing.InScope != desired.InScope {
+		if desiredHasIS && existing.InScope != desired.InScope {
 			return true
 		}
-		if desired.HasCategory != existing.HasCategory {
+		desiredHasCat := desired.HasCategory && !strings.EqualFold(desired.Category, parent.Category)
+		if desiredHasCat != existing.HasCategory {
 			return true
 		}
-		if desired.HasCategory && !strings.EqualFold(existing.Category, desired.Category) {
+		if desiredHasCat && !strings.EqualFold(existing.Category, desired.Category) {
 			return true
 		}
 		return false
@@ -402,23 +448,25 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 	}
 
 	var toRemove []*existingTarget
-	for key, ex := range existingMap {
-		if !processedKeys[key] {
-			copied := *ex
-			toRemove = append(toRemove, &copied)
-			normalized := NormalizeTarget(ex.Raw)
-			changes = append(changes, Change{
-				OccurredAt:       now,
-				ProgramURL:       programURL,
-				Platform:         platform,
-				Handle:           handle,
-				TargetRaw:        ex.Raw,
-				TargetNormalized: normalized,
-				Category:         ex.Cat,
-				InScope:          ex.InScope,
-				IsBBP:            ex.IsBBP,
-				ChangeType:       "removed",
-			})
+	if !opts.MergeOnly {
+		for key, ex := range existingMap {
+			if !processedKeys[key] {
+				copied := *ex
+				toRemove = append(toRemove, &copied)
+				normalized := NormalizeTarget(ex.Raw)
+				changes = append(changes, Change{
+					OccurredAt:       now,
+					ProgramURL:       programURL,
+					Platform:         platform,
+					Handle:           handle,
+					TargetRaw:        ex.Raw,
+					TargetNormalized: normalized,
+					Category:         ex.Cat,
+					InScope:          ex.InScope,
+					IsBBP:            ex.IsBBP,
+					ChangeType:       "removed",
+				})
+			}
 		}
 	}
 
@@ -576,7 +624,7 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 				changes = append(changes, createChangeWithEntry(&entry, &variant, "added"))
 			} else {
 				// Use helper function to check if update is needed
-				if !needsVariantUpdate(&ev, &variant) {
+				if !needsVariantUpdate(&ev, &variant, entry) {
 					continue
 				}
 
@@ -591,18 +639,20 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 			}
 		}
 
-		for norm, ev := range existing.Variants {
-			if _, desiredExists := desired[norm]; desiredExists {
-				continue
-			}
-			variantDeletes = append(variantDeletes, variantDeleteOp{
-				id:      ev.ID,
-				key:     key,
-				entry:   entry,
-				variant: ev,
-			})
+		if !opts.MergeOnly {
+			for norm, ev := range existing.Variants {
+				if _, desiredExists := desired[norm]; desiredExists {
+					continue
+				}
+				variantDeletes = append(variantDeletes, variantDeleteOp{
+					id:      ev.ID,
+					key:     key,
+					entry:   entry,
+					variant: ev,
+				})
 
-			changes = append(changes, createChangeWithExisting(&entry, &ev, "removed"))
+				changes = append(changes, createChangeWithExisting(&entry, &ev, "removed"))
+			}
 		}
 	}
 

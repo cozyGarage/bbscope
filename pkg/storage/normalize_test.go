@@ -8,6 +8,8 @@ func TestNormalizeTarget(t *testing.T) {
 	}{
 		{"https://Example.COM/path/", "https://example.com/path"},
 		{"HTTPS://EXAMPLE.COM:443/a", "https://example.com/a"},
+		{"https://*.Example.COM/admin", "https://*.example.com/admin"},
+		{"https://*.example.com/api", "https://*.example.com/api"},
 		{"*.Example.COM.", "*.example.com"},
 		{"Example.COM/", "example.com"},
 		{"", ""},
@@ -25,6 +27,8 @@ func TestNormalizeProgramURL(t *testing.T) {
 	}{
 		{"https://HackerOne.com/foo/", "https://hackerone.com/foo"},
 		{"https://hackerone.com/foo", "https://hackerone.com/foo"},
+		{"https://hackerone.com/", "https://hackerone.com"},
+		{"https://hackerone.com", "https://hackerone.com"},
 		{"", ""},
 	}
 	for _, tc := range tests {
@@ -42,5 +46,10 @@ func TestIdentityKeyUsesNormalization(t *testing.T) {
 	}
 	if identityKey("evil.com", "url") == a {
 		t.Fatal("different hosts must not share identity keys")
+	}
+	admin := identityKey("https://*.example.com/admin", "url")
+	api := identityKey("https://*.example.com/api", "url")
+	if admin == "" || admin == api {
+		t.Fatalf("wildcard paths must keep distinct identity keys: %q vs %q", admin, api)
 	}
 }

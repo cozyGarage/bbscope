@@ -12,12 +12,10 @@ func NormalizeTarget(s string) string {
 		return s
 	}
 	// If it looks like a URL, normalize scheme/host/trailing slash.
+	// Wildcard hosts used to drop the path, so https://*.example.com/admin
+	// and https://*.example.com/api collapsed to the same identity key and
+	// one target was deleted on upsert.
 	if u, err := url.Parse(s); err == nil && u.Host != "" {
-		hostname := strings.ToLower(u.Hostname())
-		if strings.Contains(hostname, "*") {
-			return strings.TrimSuffix(hostname, ".")
-		}
-
 		u.Host = strings.ToLower(u.Host)
 		if u.Scheme == "http" && u.Port() == "80" {
 			u.Host = strings.TrimSuffix(u.Host, ":80")
@@ -25,9 +23,7 @@ func NormalizeTarget(s string) string {
 		if u.Scheme == "https" && u.Port() == "443" {
 			u.Host = strings.TrimSuffix(u.Host, ":443")
 		}
-		if strings.HasSuffix(u.Path, "/") && len(u.Path) > 1 {
-			u.Path = strings.TrimRight(u.Path, "/")
-		}
+		u.Path = strings.TrimRight(u.Path, "/")
 		if u.Scheme == "" {
 			u.Scheme = "https"
 		}
@@ -50,9 +46,10 @@ func NormalizeProgramURL(s string) string {
 	}
 	if u, err := url.Parse(s); err == nil && u.Host != "" {
 		u.Host = strings.ToLower(u.Host)
-		if strings.HasSuffix(u.Path, "/") && len(u.Path) > 1 {
-			u.Path = strings.TrimRight(u.Path, "/")
-		}
+		// Strip a trailing slash, including a root-only "/". Leaving "/" in
+		// place made https://host and https://host/ different UNIQUE keys
+		// while lookup treated them as the same program.
+		u.Path = strings.TrimRight(u.Path, "/")
 		if u.Scheme == "" {
 			u.Scheme = "https"
 		}

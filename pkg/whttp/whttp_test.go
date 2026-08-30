@@ -64,6 +64,23 @@ func TestGetDefaultClient(t *testing.T) {
 	}
 }
 
+func TestSetupProxyDoesNotSkipTLSVerify(t *testing.T) {
+	client := GetDefaultClient()
+	orig := client.HTTPClient.Transport
+	t.Cleanup(func() { client.HTTPClient.Transport = orig })
+
+	if err := SetupProxy("http://127.0.0.1:8080"); err != nil {
+		t.Fatalf("SetupProxy: %v", err)
+	}
+	tr, ok := client.HTTPClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type %T", client.HTTPClient.Transport)
+	}
+	if tr.TLSClientConfig != nil && tr.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("--proxy must not disable TLS verification on the shared client")
+	}
+}
+
 func TestSendHTTPRequest_Success(t *testing.T) {
 	// Create a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

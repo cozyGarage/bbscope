@@ -73,7 +73,10 @@ func ExecuteContext(ctx context.Context) {
 	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		if ctx.Err() != nil {
+		// Only a genuine cancellation is a clean exit. Testing ctx.Err() alone
+		// swallowed every unrelated failure that happened to race with Ctrl-C,
+		// reporting success for a run that did not succeed.
+		if errors.Is(err, context.Canceled) {
 			utils.Log.Info("Shutting down gracefully...")
 			os.Exit(0)
 		}
@@ -113,25 +116,9 @@ func initConfig() {
 
 	viper.AutomaticEnv()
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err != nil {
-		var cfgNotFound viper.ConfigFileNotFoundError
-		if errors.As(err, &cfgNotFound) {
-			// Config file not found; create it with defaults.
-			home, _ := os.UserHomeDir()
-			configPath := filepath.Join(home, ".bbscope.yaml")
-			if err := viper.SafeWriteConfigAs(configPath); err != nil {
-				fmt.Printf("Error creating config file: %s", err)
-			} else {
-				// Set secure permissions on newly created config file
-				if err := os.Chmod(configPath, 0600); err != nil {
-					utils.Log.Warnf("Could not set secure permissions on config file: %v", err)
-				}
-			}
-		}
-	} else {
-		// Config file found - check permissions
-		checkConfigPermissions(viper.ConfigFileUsed())
+	if err := loadViperConfig(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading config file: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Set default empty values for all keys
@@ -161,6 +148,33 @@ func initConfig() {
 	debugHTTP, _ := rootCmd.PersistentFlags().GetBool("debug-http")
 	whttp.GlobalDebug = debugHTTP
 
+}
+
+// loadViperConfig reads the configured file. A missing default ~/.bbscope.yaml
+// is created. An explicit --config path that does not exist, or a file that
+// fails to parse, is an error: silently continuing used to skip credentials
+// and still exit 0 after polling Immunefi.
+func loadViperConfig() error {
+	if err := viper.ReadInConfig(); err != nil {
+		var cfgNotFound viper.ConfigFileNotFoundError
+		if errors.As(err, &cfgNotFound) && cfgFile == "" {
+			home, homeErr := os.UserHomeDir()
+			if homeErr != nil {
+				return fmt.Errorf("creating default config: %w", homeErr)
+			}
+			configPath := filepath.Join(home, ".bbscope.yaml")
+			if writeErr := viper.SafeWriteConfigAs(configPath); writeErr != nil {
+				return fmt.Errorf("creating config file: %w", writeErr)
+			}
+			if chmodErr := os.Chmod(configPath, 0600); chmodErr != nil {
+				utils.Log.Warnf("Could not set secure permissions on config file: %v", chmodErr)
+			}
+			return nil
+		}
+		return fmt.Errorf("reading config: %w", err)
+	}
+	checkConfigPermissions(viper.ConfigFileUsed())
+	return nil
 }
 
 func GetDBConnectionString() (string, error) {

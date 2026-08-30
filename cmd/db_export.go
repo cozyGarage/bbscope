@@ -53,7 +53,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	opts := storage.ListOptions{
 		Platform:        platform,
 		IncludeOOS:      true, // Export everything by default
-		IncludeIgnored:  false,
+		IncludeIgnored:  true, // Backups must include ignored programs or a restore drops them
 		IncludeDisabled: true, // Include soft-disabled programs in backups
 	}
 
@@ -109,6 +109,10 @@ func exportCSV(entries []storage.Entry) error {
 		"is_bbp",
 		"description",
 		"source",
+		"base_target_raw",
+		"base_category",
+		"disabled",
+		"is_ignored",
 	}
 	if err := writer.Write(header); err != nil {
 		return err
@@ -127,6 +131,10 @@ func exportCSV(entries []storage.Entry) error {
 			fmt.Sprintf("%t", e.IsBBP),
 			e.Description,
 			e.Source,
+			e.BaseTargetRaw,
+			e.BaseCategory,
+			fmt.Sprintf("%t", e.Disabled),
+			fmt.Sprintf("%t", e.IsIgnored),
 		}
 		if err := writer.Write(record); err != nil {
 			return err

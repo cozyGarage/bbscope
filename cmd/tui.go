@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 	"github.com/cozyGarage/bbscope/v2/pkg/tui"
@@ -23,10 +22,11 @@ Features:
   - Interactive search interface
   - Minimal, clean design`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Get database URL from config
-		dbURL := viper.GetString("db_url")
-		if dbURL == "" {
-			return fmt.Errorf("database URL not configured. Set 'db_url' in ~/.bbscope.yaml")
+		// Share the other commands' resolution so the URL is validated the same
+		// way rather than being read raw from viper.
+		dbURL, err := GetDBConnectionString()
+		if err != nil {
+			return err
 		}
 
 		// Open database connection

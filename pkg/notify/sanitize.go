@@ -51,7 +51,7 @@ func formatSlackLink(rawURL, label string) string {
 	label = strings.ReplaceAll(label, "<", " ")
 	if safe == "" || strings.ContainsAny(safe, "|>") {
 		if label == "" {
-			return rawURL
+			return escapeSlackText(rawURL)
 		}
 		return label
 	}
@@ -69,7 +69,7 @@ func formatDiscordLink(label, rawURL string) string {
 	label = strings.ReplaceAll(label, "\n", " ")
 	if safe == "" || strings.Contains(safe, ")") {
 		if label == "" {
-			return rawURL
+			return escapeDiscordMarkdown(rawURL)
 		}
 		return label
 	}
@@ -81,7 +81,10 @@ func formatDiscordLink(label, rawURL string) string {
 
 // escapeDiscordInlineCode escapes backticks in values shown inside `code` spans.
 func escapeDiscordInlineCode(s string) string {
-	return strings.ReplaceAll(s, "`", "'")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "`", "'")
+	return neutralizeDiscordMentions(s)
 }
 
 // discordMarkdownReplacer escapes Discord markdown control characters in
@@ -99,7 +102,14 @@ var discordMarkdownReplacer = strings.NewReplacer(
 
 // escapeDiscordMarkdown escapes Discord markdown control characters.
 func escapeDiscordMarkdown(s string) string {
-	return discordMarkdownReplacer.Replace(s)
+	return neutralizeDiscordMentions(discordMarkdownReplacer.Replace(s))
+}
+
+func neutralizeDiscordMentions(s string) string {
+	s = strings.ReplaceAll(s, "@everyone", "@\u200beveryone")
+	s = strings.ReplaceAll(s, "@here", "@\u200bhere")
+	s = strings.ReplaceAll(s, "<@", "<@\u200b")
+	return s
 }
 
 // escapeSlackText escapes Slack mrkdwn's reserved characters. Escaping "<"

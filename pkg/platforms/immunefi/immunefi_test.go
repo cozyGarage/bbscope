@@ -2,6 +2,8 @@ package immunefi
 
 import (
 	"testing"
+
+	"github.com/tidwall/gjson"
 )
 
 func TestPlatformURL(t *testing.T) {
@@ -40,17 +42,22 @@ func TestGetCategories(t *testing.T) {
 		{
 			name:     "all category",
 			input:    "all",
-			expected: []string{"websites_and_applications", "smart_contract"},
+			expected: []string{"websites_and_applications", "smart_contract", "blockchain_dlt"},
+		},
+		{
+			name:     "blockchain category",
+			input:    "blockchain",
+			expected: []string{"blockchain_dlt"},
 		},
 		{
 			name:     "invalid category defaults to all",
 			input:    "invalid",
-			expected: []string{"websites_and_applications", "smart_contract"},
+			expected: []string{"websites_and_applications", "smart_contract", "blockchain_dlt"},
 		},
 		{
 			name:     "empty string defaults to all",
 			input:    "",
-			expected: []string{"websites_and_applications", "smart_contract"},
+			expected: []string{"websites_and_applications", "smart_contract", "blockchain_dlt"},
 		},
 	}
 
@@ -84,5 +91,23 @@ func TestGetCategoriesCaseInsensitive(t *testing.T) {
 
 	if len(lowercaseResult) != len(mixedCaseResult) {
 		t.Error("getCategories should be case-insensitive for mixed case")
+	}
+}
+
+func TestImmunefiProgramSlug(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{`{"slug":"acme","id":"ignored"}`, "acme"},
+		{`{"url":"/bug-bounty/beta/information/"}`, "beta"},
+		{`{"url":"https://immunefi.com/bug-bounty/gamma/information/"}`, "gamma"},
+		{`{"id":"delta"}`, "delta"},
+		{`{"inviteOnly":false}`, ""},
+	}
+	for _, tc := range tests {
+		if got := immunefiProgramSlug(gjson.Parse(tc.raw)); got != tc.want {
+			t.Errorf("immunefiProgramSlug(%s) = %q, want %q", tc.raw, got, tc.want)
+		}
 	}
 }

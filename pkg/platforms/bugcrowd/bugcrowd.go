@@ -283,6 +283,43 @@ func sanitizeBugcrowdRedirectURL(raw string) (string, error) {
 	return "", fmt.Errorf("redirect URL host %q is not an allowed bugcrowd.com host", host)
 }
 
+func bugcrowdStatusError(status int, what string) error {
+	if status == 403 || status == 406 {
+		return errors.New(WAF_BANNED_ERROR)
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("bugcrowd: %s failed with status %d", what, status)
+	}
+	return nil
+}
+
+// resolveBugcrowdAPIURL joins a path (or absolute URL) onto apiBaseURL and
+// refuses anything that would send the session cookie off-origin. Paths in
+// HTML/JSON used to be concatenated as apiBaseURL+path, so a scheme-relative
+// or absolute value could leave bugcrowd.com.
+func resolveBugcrowdAPIURL(pathOrURL string) (string, error) {
+	pathOrURL = strings.TrimSpace(pathOrURL)
+	if pathOrURL == "" {
+		return "", fmt.Errorf("empty bugcrowd URL")
+	}
+	base, err := url.Parse(strings.TrimRight(apiBaseURL, "/") + "/")
+	if err != nil {
+		return "", fmt.Errorf("invalid apiBaseURL: %w", err)
+	}
+	ref, err := url.Parse(pathOrURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid bugcrowd URL %q: %w", pathOrURL, err)
+	}
+	if ref.User != nil {
+		return "", fmt.Errorf("refusing bugcrowd URL with userinfo")
+	}
+	resolved := base.ResolveReference(ref)
+	if !strings.EqualFold(resolved.Scheme, base.Scheme) || !strings.EqualFold(resolved.Host, base.Host) {
+		return "", fmt.Errorf("refusing off-origin bugcrowd URL %q", resolved.String())
+	}
+	return resolved.String(), nil
+}
+
 func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool) ([]string, error) {
 	pageIndex := 1
 	var totalCount int
@@ -310,12 +347,14 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 			return nil, err
 		}
 
-		if res.StatusCode == 403 || res.StatusCode == 406 {
-			return nil, errors.New("you are temporarily WAF banned, change IP or wait a few hours")
+		if err := bugcrowdStatusError(res.StatusCode, "listing engagements"); err != nil {
+			return nil, err
 		}
 
-		// Assuming res.BodyString is the JSON string response
 		result := gjson.Get(res.BodyString, "engagements")
+		if !result.Exists() {
+			return nil, fmt.Errorf("bugcrowd: listing response missing engagements array")
+		}
 		if totalCount == 0 {
 			totalCount = int(gjson.Get(res.BodyString, "paginationMeta.totalCount").Int())
 		}
@@ -390,10 +429,14 @@ func GetProgramScope(handle string, categories string, token string) (pData scop
 }
 
 func getEngagementBriefVersionDocument(handle string, token string) (string, error) {
+	pageURL, err := resolveBugcrowdAPIURL(handle)
+	if err != nil {
+		return "", err
+	}
 	res, err := rateLimitedSendHTTPRequest(
 		&whttp.WHTTPReq{
 			Method: "GET",
-			URL:    apiBaseURL + handle,
+			URL:    pageURL,
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Cookie", Value: "_bugcrowd_session=" + token},
 				{Name: "User-Agent", Value: USER_AGENT},
@@ -405,13 +448,11 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 		return "", err
 	}
 
-	if res.StatusCode == 403 || res.StatusCode == 406 {
-		return "", errors.New(WAF_BANNED_ERROR)
-	}
-
-	// Likely from a knownHandle we passed that's actually gone now
 	if res.StatusCode == 404 {
-		return "", nil // it's not an error for which we wanna exit the program
+		return "", nil
+	}
+	if err := bugcrowdStatusError(res.StatusCode, "engagement page "+handle); err != nil {
+		return "", err
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(res.BodyString))
@@ -424,13 +465,11 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 	// Get the value of the data-api-endpoints attribute
 	apiEndpointsJSON, exists := div.Attr("data-api-endpoints")
 	if !exists {
-		// This will be triggered when using a non-2FA token and
 		if strings.Contains(res.BodyString, "ResearcherEngagementCompliance") {
-			utils.Log.Warn("Compliance required! Skipping: ", apiBaseURL+handle)
-		} else {
-			utils.Log.Warn("data-api-endpoints attribute not found at "+apiBaseURL+handle, res.StatusCode)
+			utils.Log.Warn("Compliance required! Skipping: ", pageURL)
+			return "", nil
 		}
-		return "", nil
+		return "", fmt.Errorf("bugcrowd: engagement page missing brief endpoints for %s", handle)
 	}
 
 	path := gjson.Get(apiEndpointsJSON, "engagementBriefApi.getBriefVersionDocument").String()
@@ -447,10 +486,14 @@ func extractScopeFromEngagement(getBriefVersionDocument string, categories strin
 		utils.Log.Warn("Compliance required or brief URL missing; skipping engagement scope extraction")
 		return nil
 	}
+	briefURL, err := resolveBugcrowdAPIURL(getBriefVersionDocument)
+	if err != nil {
+		return err
+	}
 	res, err := rateLimitedSendHTTPRequest(
 		&whttp.WHTTPReq{
 			Method: "GET",
-			URL:    apiBaseURL + getBriefVersionDocument,
+			URL:    briefURL,
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Cookie", Value: "_bugcrowd_session=" + token},
 				{Name: "User-Agent", Value: USER_AGENT},
@@ -462,12 +505,13 @@ func extractScopeFromEngagement(getBriefVersionDocument string, categories strin
 		return err
 	}
 
-	if res.StatusCode == 403 || res.StatusCode == 406 {
-		return errors.New(WAF_BANNED_ERROR)
+	if err := bugcrowdStatusError(res.StatusCode, "engagement brief"); err != nil {
+		return err
 	}
-
-	// Extract the "scope" array from the JSON
 	scopeArray := gjson.Get(res.BodyString, "data.scope")
+	if !scopeArray.Exists() {
+		return fmt.Errorf("bugcrowd: engagement brief missing data.scope")
+	}
 	selectedCategories := scope.GetAllStringsForCategories(categories)
 
 	// Iterate over each element of the "scope" array
@@ -534,13 +578,14 @@ func extractScopeFromTargetGroups(url string, categories string, token string, p
 		return err
 	}
 
-	if res.StatusCode == 403 || res.StatusCode == 406 {
-		return errors.New(WAF_BANNED_ERROR)
-	}
-
-	// Likely from a knownHandle we passed that's actually gone now
 	if res.StatusCode == 404 {
-		return nil // it's not an error for which we wanna exit the program
+		return nil
+	}
+	if err := bugcrowdStatusError(res.StatusCode, "target groups"); err != nil {
+		return err
+	}
+	if !gjson.Get(res.BodyString, "groups").Exists() {
+		return fmt.Errorf("bugcrowd: target_groups response missing groups")
 	}
 
 	noScopeTable := true
@@ -561,10 +606,14 @@ func extractScopeFromTargetGroups(url string, categories string, token string, p
 }
 
 func extractScopeFromTargetTable(scopeTableURL string, categories string, token string, pData *scope.ProgramData, inScope bool) error {
+	tableURL, err := resolveBugcrowdAPIURL(scopeTableURL)
+	if err != nil {
+		return err
+	}
 	res, err := rateLimitedSendHTTPRequest(
 		&whttp.WHTTPReq{
 			Method: "GET",
-			URL:    apiBaseURL + scopeTableURL,
+			URL:    tableURL,
 			Headers: []whttp.WHTTPHeader{
 				{Name: "Cookie", Value: "_bugcrowd_session=" + token},
 				{Name: "User-Agent", Value: USER_AGENT},
@@ -576,8 +625,11 @@ func extractScopeFromTargetTable(scopeTableURL string, categories string, token 
 		return err
 	}
 
-	if res.StatusCode == 403 || res.StatusCode == 406 {
-		return errors.New(WAF_BANNED_ERROR)
+	if err := bugcrowdStatusError(res.StatusCode, "target table"); err != nil {
+		return err
+	}
+	if !gjson.Get(res.BodyString, "targets").Exists() {
+		return fmt.Errorf("bugcrowd: target table missing targets")
 	}
 
 	json := res.BodyString

@@ -41,3 +41,18 @@ func TestPrintChangesRespectsSince(t *testing.T) {
 		t.Fatalf("recent change should be printed, got: %s", out)
 	}
 }
+
+func TestFilterChangesForOutputDropsBaseWhenVariantExists(t *testing.T) {
+	now := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	changes := []storage.Change{
+		{OccurredAt: now, Platform: "h1", ProgramURL: "https://h1/p", TargetRaw: "ex.com", ChangeType: "added"},
+		{OccurredAt: now, Platform: "h1", ProgramURL: "https://h1/p", TargetRaw: "ex.com", TargetAINormalized: "ex.com", ChangeType: "added"},
+	}
+	got := filterChangesForOutput(changes, time.Time{})
+	if len(got) != 1 {
+		t.Fatalf("expected only the variant row, got %d", len(got))
+	}
+	if got[0].TargetAINormalized == "" {
+		t.Fatal("the remaining row should be the AI variant")
+	}
+}

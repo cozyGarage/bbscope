@@ -25,6 +25,9 @@ func NewPollerWithLogin(email, password, otpSecret, proxy string) (*Poller, erro
 func (p *Poller) Name() string { return "bc" }
 
 func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if cfg.Token != "" {
 		p.token = cfg.Token
 		return nil
@@ -46,12 +49,14 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 	if err != nil {
 		return nil, err
 	}
-	// Optionally include VDP if not bbpOnly
+	// Optionally include VDP if not bbpOnly. A VDP listing failure used to
+	// be swallowed, so a WAF/HTML page looked like "no VDP programs".
 	if !opts.BountyOnly {
 		vdp, err := GetProgramHandles(p.token, "vdp", opts.PrivateOnly)
-		if err == nil {
-			handles = append(handles, vdp...)
+		if err != nil {
+			return nil, err
 		}
+		handles = append(handles, vdp...)
 	}
 	return handles, nil
 }

@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/cozyGarage/bbscope/v2/internal/utils"
-	"github.com/cozyGarage/bbscope/v2/pkg/credentials"
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	ywhplatform "github.com/cozyGarage/bbscope/v2/pkg/platforms/yeswehack"
 	"github.com/cozyGarage/bbscope/v2/pkg/whttp"
@@ -18,9 +18,9 @@ var pollYwhCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		token, _ := cmd.Flags().GetString("token") // Token is CLI-only, not from config
 		// Use credentials package (checks keychain first, then config file)
-		email := credentials.Get("yeswehack.email")
-		password := credentials.Get("yeswehack.password")
-		otpSecret := credentials.Get("yeswehack.otpsecret")
+		email := flagOrCredential(cmd, "email", "yeswehack.email")
+		password := flagOrCredential(cmd, "password", "yeswehack.password")
+		otpSecret := flagOrCredential(cmd, "otp-secret", "yeswehack.otpsecret")
 		proxy, _ := rootCmd.Flags().GetString("proxy")
 		if proxy != "" {
 			if err := whttp.SetupProxy(proxy); err != nil {
@@ -29,8 +29,8 @@ var pollYwhCmd = &cobra.Command{
 		}
 		// Validate auth: require either token OR (email+password+otp-secret)
 		if token == "" && (email == "" || password == "" || otpSecret == "") {
-			utils.Log.Error("yeswehack requires either token or email+password+otp-secret")
-			return nil
+			cmd.SilenceUsage = true
+			return errors.New("yeswehack requires either token or email+password+otp-secret")
 		}
 
 		poller := &ywhplatform.Poller{}

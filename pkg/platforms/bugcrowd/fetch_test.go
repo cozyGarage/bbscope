@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 func withBaseURL(t *testing.T, url string) {
@@ -200,6 +201,62 @@ func TestGetProgramHandles_WAFBanned(t *testing.T) {
 	_, err := GetProgramHandles("tok", "bug_bounty", false)
 	if err == nil || !strings.Contains(err.Error(), "WAF banned") {
 		t.Fatalf("expected WAF banned error, got %v", err)
+	}
+}
+
+func TestGetProgramHandles_Non2xxAndHTML(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, "<html>login</html>")
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	_, err := GetProgramHandles("tok", "bug_bounty", false)
+	if err == nil {
+		t.Fatal("expected an error for a non-2xx listing page, not an empty list")
+	}
+}
+
+func TestGetProgramHandles_HTML200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "<html>login</html>")
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	_, err := GetProgramHandles("tok", "bug_bounty", false)
+	if err == nil {
+		t.Fatal("expected an error when the listing body has no engagements array")
+	}
+}
+
+func TestListProgramHandles_VDPError(t *testing.T) {
+	bbp := readTestdata(t, "engagements_bbp.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("category") == "vdp" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, bbp)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	p := NewPollerFromToken("tok")
+	if _, err := p.ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
+		t.Fatal("expected VDP listing failure to fail the poller list")
+	}
+}
+
+func TestExtractScopeFromTargetTable_RejectsOffOrigin(t *testing.T) {
+	orig := apiBaseURL
+	apiBaseURL = "https://bugcrowd.com"
+	t.Cleanup(func() { apiBaseURL = orig })
+
+	err := extractScopeFromTargetTable("https://evil.example/targets.json", "all", "tok", &scope.ProgramData{}, true)
+	if err == nil {
+		t.Fatal("expected off-origin targets_url to be rejected")
 	}
 }
 

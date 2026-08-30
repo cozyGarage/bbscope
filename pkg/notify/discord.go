@@ -62,9 +62,16 @@ func (d *DiscordNotifier) Send(ctx context.Context, event ChangeEvent) error {
 
 // discordMessage represents a Discord webhook message
 type discordMessage struct {
-	Username string         `json:"username,omitempty"`
-	Content  string         `json:"content,omitempty"`
-	Embeds   []discordEmbed `json:"embeds,omitempty"`
+	Username        string                  `json:"username,omitempty"`
+	Content         string                  `json:"content,omitempty"`
+	Embeds          []discordEmbed          `json:"embeds,omitempty"`
+	AllowedMentions *discordAllowedMentions `json:"allowed_mentions,omitempty"`
+}
+
+// discordAllowedMentions disables parse-all mention handling so untrusted
+// scope text cannot ping @everyone / role IDs even if a character slips through.
+type discordAllowedMentions struct {
+	Parse []string `json:"parse"`
 }
 
 // discordEmbed represents a Discord embed
@@ -133,8 +140,9 @@ func formatDiscordMessage(event ChangeEvent, cfg *DiscordConfig) discordMessage 
 	}
 
 	return discordMessage{
-		Username: username,
-		Embeds:   []discordEmbed{embed},
+		Username:        username,
+		Embeds:          []discordEmbed{embed},
+		AllowedMentions: &discordAllowedMentions{Parse: []string{}},
 	}
 }
 

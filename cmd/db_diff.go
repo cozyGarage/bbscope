@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -155,77 +158,60 @@ func outputDiffText(changes []storage.Change, from, to time.Time) {
 	fmt.Printf("\nSummary: %d added, %d removed, %d total\n", added, removed, len(changes))
 }
 
+// diffEntry is the JSON shape emitted by `db diff --format json`.
+type diffEntry struct {
+	Type     string `json:"type"`
+	Platform string `json:"platform"`
+	Target   string `json:"target"`
+	Category string `json:"category"`
+	Program  string `json:"program"`
+	Time     string `json:"time"`
+}
+
 func outputDiffJSON(changes []storage.Change) {
-	// Simple JSON output
-	fmt.Println("[")
-	for i, change := range changes {
-		fmt.Printf(`  {"type": "%s", "platform": "%s", "target": "%s", "category": "%s", "program": "%s", "time": "%s"}`,
+	// Built with encoding/json rather than Printf: a quote or backslash in a
+	// target or program URL used to produce invalid JSON.
+	out := make([]diffEntry, 0, len(changes))
+	for _, change := range changes {
+		out = append(out, diffEntry{
+			Type:     change.ChangeType,
+			Platform: change.Platform,
+			Target:   change.TargetNormalized,
+			Category: change.Category,
+			Program:  change.ProgramURL,
+			Time:     change.OccurredAt.Format(time.RFC3339),
+		})
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(out); err != nil {
+		utils.Log.Errorf("Could not encode diff as JSON: %v", err)
+	}
+}
+
+func outputDiffCSV(changes []storage.Change) {
+	// encoding/csv rather than the previous hand-rolled escaper, which handled
+	// commas and quotes but not embedded newlines.
+	w := csv.NewWriter(os.Stdout)
+	defer w.Flush()
+
+	records := make([][]string, 0, len(changes)+1)
+	records = append(records, []string{"type", "platform", "target", "category", "program", "time"})
+	for _, change := range changes {
+		records = append(records, []string{
 			change.ChangeType,
 			change.Platform,
 			change.TargetNormalized,
 			change.Category,
 			change.ProgramURL,
 			change.OccurredAt.Format(time.RFC3339),
-		)
-		if i < len(changes)-1 {
-			fmt.Println(",")
-		} else {
-			fmt.Println()
-		}
+		})
 	}
-	fmt.Println("]")
-}
 
-func outputDiffCSV(changes []storage.Change) {
-	fmt.Println("type,platform,target,category,program,time")
-	for _, change := range changes {
-		fmt.Printf("%s,%s,%s,%s,%s,%s\n",
-			change.ChangeType,
-			change.Platform,
-			csvEscape(change.TargetNormalized),
-			change.Category,
-			csvEscape(change.ProgramURL),
-			change.OccurredAt.Format(time.RFC3339),
-		)
+	if err := w.WriteAll(records); err != nil {
+		utils.Log.Errorf("Could not write diff as CSV: %v", err)
 	}
-}
-
-func csvEscape(s string) string {
-	// Simple CSV escaping
-	if containsComma(s) || containsQuote(s) {
-		return fmt.Sprintf(`"%s"`, replaceQuotes(s))
-	}
-	return s
-}
-
-func containsComma(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == ',' {
-			return true
-		}
-	}
-	return false
-}
-
-func containsQuote(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '"' {
-			return true
-		}
-	}
-	return false
-}
-
-func replaceQuotes(s string) string {
-	result := ""
-	for i := 0; i < len(s); i++ {
-		if s[i] == '"' {
-			result += `""`
-		} else {
-			result += string(s[i])
-		}
-	}
-	return result
 }
 
 func init() {

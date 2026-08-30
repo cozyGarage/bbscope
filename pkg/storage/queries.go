@@ -131,7 +131,7 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 	}
 	if opts.ProgramFilter != "" {
 		filter := "%" + escapeLikePattern(opts.ProgramFilter) + "%"
-		where += fmt.Sprintf(" AND p.url LIKE $%d ESCAPE '\\'", argIdx)
+		where += fmt.Sprintf(" AND (lower(p.url) LIKE lower($%d) ESCAPE '\\' OR lower(p.handle) LIKE lower($%d) ESCAPE '\\')", argIdx, argIdx)
 		args = append(args, filter)
 		argIdx++
 	}
@@ -145,7 +145,10 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 		where += " AND p.disabled = 0"
 	}
 	if !opts.Since.IsZero() {
-		where += fmt.Sprintf(" AND COALESCE(a.last_seen_at, t.last_seen_at) >= $%d", argIdx)
+		// Filter on the raw target's last_seen_at. Unchanged polls only bump
+		// targets_raw; COALESCE(a.last_seen_at, ...) preferred a stale AI
+		// timestamp and dropped every AI-joined row from --since listings.
+		where += fmt.Sprintf(" AND t.last_seen_at >= $%d", argIdx)
 		args = append(args, opts.Since.UTC())
 	}
 
@@ -155,6 +158,8 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			p.url,
 			p.platform,
 			p.handle,
+			p.disabled,
+			p.is_ignored,
 			t.target,
 			t.category,
 			t.description,
@@ -183,6 +188,8 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			programURL   string
 			platform     string
 			handle       string
+			disabledInt  int
+			ignoredInt   int
 			rawTarget    string
 			baseCategory string
 			descNS       sql.NullString
@@ -197,6 +204,8 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			&programURL,
 			&platform,
 			&handle,
+			&disabledInt,
+			&ignoredInt,
 			&rawTarget,
 			&baseCategory,
 			&descNS,
@@ -221,7 +230,10 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			Description:          descNS.String,
 			IsBBP:                isBBPInt == 1,
 			Category:             baseCategory,
+			BaseCategory:         baseCategory,
 			Source:               "raw",
+			Disabled:             disabledInt == 1,
+			IsIgnored:            ignoredInt == 1,
 		}
 
 		if aiIDNS.Valid {
@@ -284,7 +296,7 @@ func (d *DB) GetChangesBetween(ctx context.Context, from, to time.Time, programU
 	args := []interface{}{from.UTC(), to.UTC()}
 
 	if programURL != "" {
-		query += " AND program_url LIKE $3 ESCAPE '\\'"
+		query += " AND (lower(program_url) LIKE lower($3) ESCAPE '\\' OR lower(handle) LIKE lower($3) ESCAPE '\\')"
 		args = append(args, "%"+escapeLikePattern(programURL)+"%")
 	}
 
@@ -387,6 +399,7 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 		LEFT JOIN targets_ai_enhanced a ON a.target_id = t.id
 		WHERE p.is_ignored = 0 AND p.disabled = 0 AND (
 			COALESCE(a.target_ai_normalized, t.target) LIKE $1 ESCAPE '\' OR
+			t.target LIKE $1 ESCAPE '\' OR
 			t.description LIKE $2 ESCAPE '\' OR
 			p.url LIKE $3 ESCAPE '\'
 		)
@@ -408,13 +421,13 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 			NULL as ai_id,
 			'historical' as source
 		FROM scope_changes c
-		WHERE (c.target_normalized LIKE $4 ESCAPE '\' OR c.target_ai_normalized LIKE $5 ESCAPE '\' OR c.program_url LIKE $6 ESCAPE '\')
+		LEFT JOIN programs p3 ON p3.url = c.program_url
+		WHERE (c.target_normalized LIKE $4 ESCAPE '\' OR c.target_ai_normalized LIKE $5 ESCAPE '\' OR c.target_raw LIKE $4 ESCAPE '\' OR c.program_url LIKE $6 ESCAPE '\')
+		AND (p3.id IS NULL OR (p3.is_ignored = 0 AND p3.disabled = 0))
 		AND NOT EXISTS (
 			SELECT 1 FROM targets_raw t2
 			JOIN programs p2 ON t2.program_id = p2.id
 			WHERE p2.url = c.program_url
-			AND p2.is_ignored = 0
-			AND p2.disabled = 0
 			AND t2.target = c.target_raw
 			AND t2.category = c.category
 		);

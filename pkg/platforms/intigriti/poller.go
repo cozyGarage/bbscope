@@ -35,6 +35,9 @@ func NewPoller() *Poller {
 func (p *Poller) Name() string { return "it" }
 
 func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if cfg.Token != "" {
 		p.token = cfg.Token
 	}
@@ -71,11 +74,24 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		}
 
 		body := res.BodyString
+		recordsRes := gjson.Get(body, "records")
+		if !recordsRes.Exists() {
+			return nil, fmt.Errorf("intigriti: listing response missing records")
+		}
 		if offset == 0 {
+			if !gjson.Get(body, "maxCount").Exists() {
+				return nil, fmt.Errorf("intigriti: listing response missing maxCount")
+			}
 			total = int(gjson.Get(body, "maxCount").Int())
 		}
 
-		records := gjson.Get(body, "records").Array()
+		records := recordsRes.Array()
+		if len(records) == 0 {
+			if offset == 0 && total == 0 {
+				break
+			}
+			return nil, fmt.Errorf("intigriti: empty records page at offset %d (maxCount=%d)", offset, total)
+		}
 		for _, record := range records {
 			id := record.Get("id").String()
 			maxBounty := record.Get("maxBounty.value").Int()
@@ -166,8 +182,10 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 		break
 	}
 
-	//processed := make(map[string]struct{})
 	contentArray := gjson.Get(res.BodyString, "domains.content")
+	if !contentArray.Exists() {
+		return pData, fmt.Errorf("intigriti: program %s response missing domains.content", handle)
+	}
 	contentArray.ForEach(func(key, value gjson.Result) bool {
 		endpoint := value.Get("endpoint").String()
 		categoryID := value.Get("type.id").Int()

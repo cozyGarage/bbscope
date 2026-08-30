@@ -8,9 +8,10 @@ var PLATFORM_URL = "https://immunefi.com"
 
 func getCategories(input string) []string {
 	categories := map[string][]string{
-		"web":       {"websites_and_applications"},
-		"contracts": {"smart_contract"},
-		"all":       {"websites_and_applications", "smart_contract"},
+		"web":        {"websites_and_applications"},
+		"contracts":  {"smart_contract"},
+		"blockchain": {"blockchain_dlt"},
+		"all":        {"websites_and_applications", "smart_contract", "blockchain_dlt"},
 	}
 
 	selectedCategory, ok := categories[strings.ToLower(input)]
