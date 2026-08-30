@@ -24,53 +24,58 @@ type ChangeEvent struct {
 	OccurredAt    time.Time
 }
 
-// Config holds notification configuration
+// Config holds notification configuration.
+//
+// The mapstructure tags mirror the yaml tags because viper decodes with
+// mapstructure, not the yaml package. Without them viper would look for keys
+// named after the Go fields (for example "webhookurl" rather than "webhook")
+// and silently produce an empty config.
 type Config struct {
-	Slack    *SlackConfig    `yaml:"slack,omitempty"`
-	Discord  *DiscordConfig  `yaml:"discord,omitempty"`
-	Telegram *TelegramConfig `yaml:"telegram,omitempty"`
-	Email    *EmailConfig    `yaml:"email,omitempty"`
-	Webhook  *WebhookConfig  `yaml:"webhook,omitempty"`
+	Slack    *SlackConfig    `yaml:"slack,omitempty" mapstructure:"slack"`
+	Discord  *DiscordConfig  `yaml:"discord,omitempty" mapstructure:"discord"`
+	Telegram *TelegramConfig `yaml:"telegram,omitempty" mapstructure:"telegram"`
+	Email    *EmailConfig    `yaml:"email,omitempty" mapstructure:"email"`
+	Webhook  *WebhookConfig  `yaml:"webhook,omitempty" mapstructure:"webhook"`
 }
 
 // SlackConfig holds Slack notification settings
 type SlackConfig struct {
-	WebhookURL string   `yaml:"webhook"`
-	Events     []string `yaml:"events,omitempty"` // e.g., ["added", "removed"]
-	Username   string   `yaml:"username,omitempty"`
-	Icon       string   `yaml:"icon,omitempty"`
+	WebhookURL string   `yaml:"webhook" mapstructure:"webhook"`
+	Events     []string `yaml:"events,omitempty" mapstructure:"events"` // e.g., ["added", "removed"]
+	Username   string   `yaml:"username,omitempty" mapstructure:"username"`
+	Icon       string   `yaml:"icon,omitempty" mapstructure:"icon"`
 }
 
 // DiscordConfig holds Discord notification settings
 type DiscordConfig struct {
-	WebhookURL string   `yaml:"webhook"`
-	Events     []string `yaml:"events,omitempty"`
-	Username   string   `yaml:"username,omitempty"`
+	WebhookURL string   `yaml:"webhook" mapstructure:"webhook"`
+	Events     []string `yaml:"events,omitempty" mapstructure:"events"`
+	Username   string   `yaml:"username,omitempty" mapstructure:"username"`
 }
 
 // TelegramConfig holds Telegram notification settings
 type TelegramConfig struct {
-	BotToken string   `yaml:"bot_token"`
-	ChatID   string   `yaml:"chat_id"`
-	Events   []string `yaml:"events,omitempty"`
+	BotToken string   `yaml:"bot_token" mapstructure:"bot_token"`
+	ChatID   string   `yaml:"chat_id" mapstructure:"chat_id"`
+	Events   []string `yaml:"events,omitempty" mapstructure:"events"`
 }
 
 // EmailConfig holds email notification settings
 type EmailConfig struct {
-	SMTPHost string   `yaml:"smtp_host"`
-	SMTPPort int      `yaml:"smtp_port"`
-	From     string   `yaml:"from"`
-	To       []string `yaml:"to"`
-	Username string   `yaml:"username,omitempty"`
-	Password string   `yaml:"password,omitempty"`
-	Events   []string `yaml:"events,omitempty"`
+	SMTPHost string   `yaml:"smtp_host" mapstructure:"smtp_host"`
+	SMTPPort int      `yaml:"smtp_port" mapstructure:"smtp_port"`
+	From     string   `yaml:"from" mapstructure:"from"`
+	To       []string `yaml:"to" mapstructure:"to"`
+	Username string   `yaml:"username,omitempty" mapstructure:"username"`
+	Password string   `yaml:"password,omitempty" mapstructure:"password"`
+	Events   []string `yaml:"events,omitempty" mapstructure:"events"`
 }
 
 // WebhookConfig holds custom webhook settings
 type WebhookConfig struct {
-	URL     string            `yaml:"url"`
-	Headers map[string]string `yaml:"headers,omitempty"`
-	Events  []string          `yaml:"events,omitempty"`
+	URL     string            `yaml:"url" mapstructure:"url"`
+	Headers map[string]string `yaml:"headers,omitempty" mapstructure:"headers"`
+	Events  []string          `yaml:"events,omitempty" mapstructure:"events"`
 }
 
 // LoadNotifiers creates notifiers from configuration
