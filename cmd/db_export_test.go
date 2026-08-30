@@ -1,11 +1,8 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/csv"
 	"encoding/json"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -29,29 +26,11 @@ func sampleExportEntries() []storage.Entry {
 	}
 }
 
-func captureStdout(t *testing.T, fn func() error) (string, error) {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := os.Stdout
-	os.Stdout = w
-	fnErr := fn()
-	_ = w.Close()
-	os.Stdout = old
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatal(err)
-	}
-	_ = r.Close()
-	return buf.String(), fnErr
-}
-
 func TestExportJSON(t *testing.T) {
-	out, err := captureStdout(t, func() error { return exportJSON(sampleExportEntries()) })
-	if err != nil {
-		t.Fatalf("exportJSON: %v", err)
+	var fnErr error
+	out := captureStdout(t, func() { fnErr = exportJSON(sampleExportEntries()) })
+	if fnErr != nil {
+		t.Fatalf("exportJSON: %v", fnErr)
 	}
 	var data ExportData
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
@@ -66,9 +45,10 @@ func TestExportJSON(t *testing.T) {
 }
 
 func TestExportCSVQuotesDescription(t *testing.T) {
-	out, err := captureStdout(t, func() error { return exportCSV(sampleExportEntries()) })
-	if err != nil {
-		t.Fatalf("exportCSV: %v", err)
+	var fnErr error
+	out := captureStdout(t, func() { fnErr = exportCSV(sampleExportEntries()) })
+	if fnErr != nil {
+		t.Fatalf("exportCSV: %v", fnErr)
 	}
 	r := csv.NewReader(strings.NewReader(out))
 	records, err := r.ReadAll()
@@ -81,8 +61,11 @@ func TestExportCSVQuotesDescription(t *testing.T) {
 	if records[0][0] != "program_url" {
 		t.Fatalf("header[0] = %q", records[0][0])
 	}
-	if records[1][9] != "api, v2" {
-		t.Fatalf("description = %q, want quoted comma preserved", records[1][9])
+	if records[1][8] != "api, v2" {
+		t.Fatalf("description = %q, want quoted comma preserved", records[1][8])
+	}
+	if records[1][9] != "raw" {
+		t.Fatalf("source = %q", records[1][9])
 	}
 }
 
@@ -124,9 +107,10 @@ func TestExportUnknownFormat(t *testing.T) {
 }
 
 func TestExportCSVEmptyHasHeader(t *testing.T) {
-	out, err := captureStdout(t, func() error { return exportCSV(nil) })
-	if err != nil {
-		t.Fatalf("exportCSV(nil): %v", err)
+	var fnErr error
+	out := captureStdout(t, func() { fnErr = exportCSV(nil) })
+	if fnErr != nil {
+		t.Fatalf("exportCSV(nil): %v", fnErr)
 	}
 	r := csv.NewReader(strings.NewReader(out))
 	records, err := r.ReadAll()
