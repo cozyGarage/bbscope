@@ -158,6 +158,8 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			p.url,
 			p.platform,
 			p.handle,
+			p.disabled,
+			p.is_ignored,
 			t.target,
 			t.category,
 			t.description,
@@ -186,6 +188,8 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			programURL   string
 			platform     string
 			handle       string
+			disabledInt  int
+			ignoredInt   int
 			rawTarget    string
 			baseCategory string
 			descNS       sql.NullString
@@ -200,6 +204,8 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			&programURL,
 			&platform,
 			&handle,
+			&disabledInt,
+			&ignoredInt,
 			&rawTarget,
 			&baseCategory,
 			&descNS,
@@ -224,7 +230,10 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 			Description:          descNS.String,
 			IsBBP:                isBBPInt == 1,
 			Category:             baseCategory,
+			BaseCategory:         baseCategory,
 			Source:               "raw",
+			Disabled:             disabledInt == 1,
+			IsIgnored:            ignoredInt == 1,
 		}
 
 		if aiIDNS.Valid {

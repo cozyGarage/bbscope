@@ -109,6 +109,10 @@ func exportCSV(entries []storage.Entry) error {
 		"is_bbp",
 		"description",
 		"source",
+		"base_target_raw",
+		"base_category",
+		"disabled",
+		"is_ignored",
 	}
 	if err := writer.Write(header); err != nil {
 		return err
@@ -127,6 +131,10 @@ func exportCSV(entries []storage.Entry) error {
 			fmt.Sprintf("%t", e.IsBBP),
 			e.Description,
 			e.Source,
+			e.BaseTargetRaw,
+			e.BaseCategory,
+			fmt.Sprintf("%t", e.Disabled),
+			fmt.Sprintf("%t", e.IsIgnored),
 		}
 		if err := writer.Write(record); err != nil {
 			return err

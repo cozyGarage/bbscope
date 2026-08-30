@@ -96,47 +96,27 @@ func runImport(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// importEntries restores entries into the database, returning how many were
-// imported and how many failed.
+type programKey struct {
+	url      string
+	platform string
+	handle   string
+}
+
+type programFlags struct {
+	disabled bool
+	ignored  bool
+}
+
+// importEntries restores entries into the database, returning how many raw
+// targets were imported and how many failed.
 //
-// Custom targets go through AddCustomTarget. Platform entries are grouped by
-// program and replayed through the same BuildEntries/UpsertProgramEntries path
-// a poll uses, so a backup restores as real platform data rather than being
-// skipped. Change logging is suppressed: restoring a backup is not a scope
-// change, and recording one "added" event per target would swamp the log.
+// Every entry — custom included — is grouped by program and replayed through
+// BuildEntries/UpsertProgramEntries so in_scope, description, and is_bbp
+// survive. AI-variant export rows (source=ai) are folded back onto their
+// raw target instead of being inserted as extra targets. Change logging is
+// suppressed: restoring a backup is not a scope change.
 func importEntries(ctx context.Context, db *storage.DB, entries []storage.Entry) (imported, failed int) {
-	type programKey struct {
-		url      string
-		platform string
-		handle   string
-	}
-	// Preserve the order programs first appear so output is deterministic.
-	var order []programKey
-	grouped := map[programKey][]storage.TargetItem{}
-
-	for _, e := range entries {
-		if e.Platform == "" || e.Platform == "custom" {
-			if _, err := db.AddCustomTarget(ctx, e.TargetRaw, e.Category, e.ProgramURL); err != nil {
-				fmt.Fprintf(os.Stderr, "Error adding custom target %s: %v\n", e.TargetRaw, err)
-				failed++
-			} else {
-				imported++
-			}
-			continue
-		}
-
-		key := programKey{url: e.ProgramURL, platform: e.Platform, handle: e.Handle}
-		if _, seen := grouped[key]; !seen {
-			order = append(order, key)
-		}
-		grouped[key] = append(grouped[key], storage.TargetItem{
-			URI:         e.TargetRaw,
-			Category:    e.Category,
-			Description: e.Description,
-			InScope:     e.InScope,
-			IsBBP:       e.IsBBP,
-		})
-	}
+	order, grouped, flags := groupEntriesForImport(entries)
 
 	for _, key := range order {
 		items := grouped[key]
@@ -154,10 +134,96 @@ func importEntries(ctx context.Context, db *storage.DB, entries []storage.Entry)
 			failed += len(items)
 			continue
 		}
+		if f := flags[key]; f.disabled || f.ignored {
+			if err := db.SetProgramLifecycle(ctx, key.url, f.disabled, f.ignored); err != nil {
+				fmt.Fprintf(os.Stderr, "Error restoring flags for %s: %v\n", key.url, err)
+				failed += len(items)
+				continue
+			}
+		}
 		imported += len(items)
 	}
 
 	return imported, failed
+}
+
+// groupEntriesForImport collapses export rows onto one TargetItem per raw
+// target and records program disabled/ignored flags for after the upsert.
+func groupEntriesForImport(entries []storage.Entry) ([]programKey, map[programKey][]storage.TargetItem, map[programKey]programFlags) {
+	var order []programKey
+	grouped := map[programKey][]storage.TargetItem{}
+	index := map[programKey]map[string]int{}
+	flags := map[programKey]programFlags{}
+
+	for _, e := range entries {
+		platform := e.Platform
+		if platform == "" {
+			platform = "custom"
+		}
+		programURL := e.ProgramURL
+		if programURL == "" {
+			programURL = "custom"
+		}
+		key := programKey{url: programURL, platform: platform, handle: e.Handle}
+		if _, seen := grouped[key]; !seen {
+			order = append(order, key)
+			index[key] = map[string]int{}
+		}
+		f := flags[key]
+		f.disabled = f.disabled || e.Disabled
+		f.ignored = f.ignored || e.IsIgnored
+		flags[key] = f
+
+		raw := e.BaseTargetRaw
+		if raw == "" {
+			raw = e.TargetRaw
+		}
+		baseCat := e.BaseCategory
+		if baseCat == "" && e.Source != "ai" {
+			baseCat = e.Category
+		}
+		if baseCat == "" {
+			baseCat = e.Category
+		}
+
+		items := grouped[key]
+		pos, exists := index[key][raw]
+		if !exists {
+			items = append(items, storage.TargetItem{
+				URI:         raw,
+				Category:    baseCat,
+				Description: e.Description,
+				InScope:     e.InScope,
+				IsBBP:       e.IsBBP,
+			})
+			pos = len(items) - 1
+			index[key][raw] = pos
+		}
+		item := items[pos]
+		if e.Source != "ai" {
+			item.Category = baseCat
+			item.Description = e.Description
+			item.InScope = e.InScope
+			item.IsBBP = e.IsBBP
+		} else {
+			variant := e.TargetNormalized
+			if variant == "" {
+				variant = e.TargetRaw
+			}
+			v := storage.TargetVariant{Value: variant}
+			if e.Category != "" && e.Category != item.Category {
+				v.HasCategory = true
+				v.Category = e.Category
+			}
+			v.HasInScope = true
+			v.InScope = e.InScope
+			item.Variants = append(item.Variants, v)
+		}
+		items[pos] = item
+		grouped[key] = items
+	}
+
+	return order, grouped, flags
 }
 
 // importEntry decodes a single exported entry.
@@ -303,10 +369,14 @@ func parseimportCSV(r io.Reader) ([]storage.Entry, error) {
 			TargetRaw:        field(record, "target_raw"),
 			TargetNormalized: field(record, "target_normalized"),
 			Category:         field(record, "category"),
+			BaseCategory:     field(record, "base_category"),
+			BaseTargetRaw:    field(record, "base_target_raw"),
 			Description:      field(record, "description"),
 			InScope:          inScope,
 			IsBBP:            parseCSVBool(field(record, "is_bbp")),
 			Source:           field(record, "source"),
+			Disabled:         parseCSVBool(field(record, "disabled")),
+			IsIgnored:        parseCSVBool(field(record, "is_ignored")),
 		})
 	}
 	return entries, nil

@@ -176,3 +176,95 @@ func assertSameEntries(t *testing.T, want, got []storage.Entry) {
 		}
 	}
 }
+
+func TestIntegration_ImportRestoresLifecycleAndAIVariants(t *testing.T) {
+	db, raw := openRoundtripDB(t)
+	ctx := context.Background()
+	platform := "itest_flags_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	programURL := "https://example.com/" + platform + "/a"
+
+	cleanup := func() {
+		_, _ = raw.ExecContext(ctx, `DELETE FROM targets_ai_enhanced WHERE target_id IN (
+			SELECT tr.id FROM targets_raw tr JOIN programs p ON tr.program_id = p.id WHERE p.platform = $1)`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM targets_raw WHERE program_id IN (SELECT id FROM programs WHERE platform = $1)`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM scope_changes WHERE platform = $1`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM programs WHERE platform = $1`, platform)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	items := []storage.TargetItem{
+		{
+			URI: "https://*.flags.example.com/**", Category: "url", InScope: true,
+			Variants: []storage.TargetVariant{
+				{Value: "flags.example.com", HasCategory: true, Category: "wildcard"},
+			},
+		},
+	}
+	built, err := storage.BuildEntries(programURL, platform, "a", items)
+	if err != nil {
+		t.Fatalf("BuildEntries: %v", err)
+	}
+	if _, err := db.UpsertProgramEntriesWithOptions(ctx, programURL, platform, "a", built,
+		storage.UpsertOptions{SkipChangeLog: true}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+	if err := db.SetProgramLifecycle(ctx, programURL, true, true); err != nil {
+		t.Fatalf("SetProgramLifecycle: %v", err)
+	}
+
+	exported, err := db.ListEntries(ctx, storage.ListOptions{
+		Platform: platform, IncludeOOS: true, IncludeDisabled: true, IncludeIgnored: true,
+	})
+	if err != nil {
+		t.Fatalf("ListEntries: %v", err)
+	}
+	if len(exported) == 0 {
+		t.Fatal("expected exported rows including the disabled program")
+	}
+	for _, e := range exported {
+		if !e.Disabled || !e.IsIgnored {
+			t.Fatalf("export dropped lifecycle flags: %+v", e)
+		}
+	}
+
+	cleanup()
+	imported, failed := importEntries(ctx, db, exported)
+	if failed != 0 {
+		t.Fatalf("import failed: imported=%d failed=%d", imported, failed)
+	}
+
+	progs, err := db.ListPrograms(ctx)
+	if err != nil {
+		t.Fatalf("ListPrograms: %v", err)
+	}
+	var restored *storage.Program
+	for i := range progs {
+		if progs[i].Platform == platform {
+			restored = &progs[i]
+			break
+		}
+	}
+	if restored == nil {
+		t.Fatal("program was not restored")
+	}
+	if !restored.Disabled || !restored.IsIgnored {
+		t.Fatalf("lifecycle flags not restored: disabled=%v ignored=%v", restored.Disabled, restored.IsIgnored)
+	}
+
+	enh, err := db.ListAIEnhancements(ctx, programURL)
+	if err != nil {
+		t.Fatalf("ListAIEnhancements: %v", err)
+	}
+	found := false
+	for _, variants := range enh {
+		for _, v := range variants {
+			if v.Value == "flags.example.com" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("AI variant was not restored: %#v", enh)
+	}
+}

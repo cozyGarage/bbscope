@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
 func TestParseImportJSONObject(t *testing.T) {
@@ -135,5 +137,58 @@ func TestParseImportCSVQuotedFields(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Description != "has, a comma" {
 		t.Fatalf("quoted description did not round-trip: %+v", entries)
+	}
+}
+
+func TestGroupEntriesForImportCollapsesAIVariants(t *testing.T) {
+	_, grouped, flags := groupEntriesForImport([]storage.Entry{
+		{
+			ProgramURL: "https://h1/p", Platform: "h1", Handle: "p",
+			TargetRaw: "https://*.ex.com/**", BaseTargetRaw: "https://*.ex.com/**",
+			Category: "url", BaseCategory: "url", Source: "raw", InScope: true,
+		},
+		{
+			ProgramURL: "https://h1/p", Platform: "h1", Handle: "p",
+			TargetRaw: "https://*.ex.com/**", BaseTargetRaw: "https://*.ex.com/**",
+			TargetNormalized: "ex.com", Category: "wildcard", BaseCategory: "url",
+			Source: "ai", InScope: true,
+		},
+		{
+			ProgramURL: "https://h1/p", Platform: "h1", Handle: "p",
+			TargetRaw: "https://*.ex.com/**", TargetNormalized: "www.ex.com",
+			Category: "url", Source: "ai", InScope: true, Disabled: true,
+		},
+	})
+	key := programKey{url: "https://h1/p", platform: "h1", handle: "p"}
+	items := grouped[key]
+	if len(items) != 1 {
+		t.Fatalf("expected 1 raw target, got %d", len(items))
+	}
+	if items[0].Category != "url" {
+		t.Errorf("base category = %q, want url", items[0].Category)
+	}
+	if len(items[0].Variants) != 2 {
+		t.Fatalf("expected 2 variants, got %#v", items[0].Variants)
+	}
+	if !flags[key].disabled {
+		t.Error("disabled flag was dropped")
+	}
+}
+
+func TestGroupEntriesForImportCustomKeepsScope(t *testing.T) {
+	_, grouped, _ := groupEntriesForImport([]storage.Entry{
+		{
+			Platform: "custom", ProgramURL: "custom", TargetRaw: "oos.example.com",
+			Category: "url", InScope: false, IsBBP: true, Description: "notes",
+		},
+	})
+	key := programKey{url: "custom", platform: "custom", handle: ""}
+	items := grouped[key]
+	if len(items) != 1 {
+		t.Fatalf("expected 1 custom target, got %d", len(items))
+	}
+	got := items[0]
+	if got.InScope || !got.IsBBP || got.Description != "notes" {
+		t.Fatalf("custom fields dropped: %#v", got)
 	}
 }

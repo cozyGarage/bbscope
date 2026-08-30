@@ -29,6 +29,29 @@ func (d *DB) SetProgramIgnoredStatus(ctx context.Context, programURL string, ign
 	return nil
 }
 
+// SetProgramLifecycle writes the disabled and ignored flags after an import.
+// UpsertProgramEntries always re-enables a program (that is the poll path);
+// a backup restore must put those flags back or a disabled program comes back live.
+func (d *DB) SetProgramLifecycle(ctx context.Context, programURL string, disabled, ignored bool) error {
+	programURL = NormalizeProgramURL(programURL)
+	res, err := d.sql.ExecContext(ctx, `
+		UPDATE programs
+		SET disabled = $1, is_ignored = $2
+		WHERE url = $3 OR rtrim(url, '/') = rtrim($3, '/')
+	`, boolToInt(disabled), boolToInt(ignored), programURL)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("no program found matching URL %s", programURL)
+	}
+	return nil
+}
+
 // GetIgnoredPrograms returns a map of program URLs that are marked as ignored for a specific platform.
 func (d *DB) GetIgnoredPrograms(ctx context.Context, platform string) (map[string]bool, error) {
 	rows, err := d.sql.QueryContext(ctx, "SELECT url FROM programs WHERE platform = $1 AND is_ignored = 1", platform)

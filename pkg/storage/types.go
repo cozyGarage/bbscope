@@ -23,11 +23,14 @@ type Entry struct {
 	BaseTargetRaw        string `json:"base_target_raw,omitempty"`
 
 	Category     string `json:"category"`
+	BaseCategory string `json:"base_category,omitempty"`
 	Description  string `json:"description,omitempty"`
 	InScope      bool   `json:"in_scope"`
 	IsBBP        bool   `json:"is_bbp"`
 	IsHistorical bool   `json:"is_historical,omitempty"`
 	Source       string `json:"source,omitempty"`
+	Disabled     bool   `json:"disabled,omitempty"`
+	IsIgnored    bool   `json:"is_ignored,omitempty"`
 }
 
 // Change captures a single change event for auditing or printing.
