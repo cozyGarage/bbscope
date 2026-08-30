@@ -6,6 +6,32 @@ import (
 	"time"
 )
 
+func TestSafeHTTPURLRejectsUserinfo(t *testing.T) {
+	if got := safeHTTPURL("https://trusted.com@evil.com/path"); got != "" {
+		t.Fatalf("userinfo URL must be rejected, got %q", got)
+	}
+	if got := safeHTTPURL("https://evil.com@example.com/"); got != "" {
+		t.Fatalf("userinfo URL must be rejected, got %q", got)
+	}
+	if got := safeHTTPURL("https://example.com/path"); got != "https://example.com/path" {
+		t.Fatalf("plain https URL = %q, want unchanged", got)
+	}
+}
+
+func TestEmailToHeaderListsEveryRecipient(t *testing.T) {
+	got := emailToHeader([]string{"one@example.com", "two@example.com"})
+	if got != "one@example.com, two@example.com" {
+		t.Fatalf("emailToHeader = %q, want both recipients", got)
+	}
+	injected := emailToHeader([]string{"one@example.com", "two@example.com\r\nBcc: evil@example.com"})
+	if !strings.Contains(injected, "two@example.com") {
+		t.Fatalf("second recipient missing from To header: %q", injected)
+	}
+	if strings.Contains(injected, "\r") || strings.Contains(injected, "\n") {
+		t.Fatalf("CR/LF survived sanitization: %q", injected)
+	}
+}
+
 func TestFormatEmailBodyEscapesHTML(t *testing.T) {
 	body := formatEmailBody(ChangeEvent{
 		Type:          "added",

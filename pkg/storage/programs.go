@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -14,8 +15,13 @@ import (
 // programURL is treated as a substring pattern; LIKE metacharacters (% and _)
 // in the user input are escaped so they match literally.
 func (d *DB) SetProgramIgnoredStatus(ctx context.Context, programURL string, ignored bool) error {
-	pattern := "%" + escapeLikePattern(programURL) + "%"
-	res, err := d.sql.ExecContext(ctx, "UPDATE programs SET is_ignored = $1 WHERE url LIKE $2 ESCAPE '\\'", boolToInt(ignored), pattern)
+	pattern := "%" + escapeLikePattern(strings.ToLower(programURL)) + "%"
+	res, err := d.sql.ExecContext(ctx, `
+		UPDATE programs
+		SET is_ignored = $1
+		WHERE lower(url) LIKE $2 ESCAPE '\'
+		   OR lower(handle) LIKE $2 ESCAPE '\'
+	`, boolToInt(ignored), pattern)
 	if err != nil {
 		return err
 	}
@@ -24,7 +30,7 @@ func (d *DB) SetProgramIgnoredStatus(ctx context.Context, programURL string, ign
 		return err
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("no program found matching URL pattern: %s", programURL)
+		return fmt.Errorf("no program found matching URL or handle pattern: %s", programURL)
 	}
 	return nil
 }
@@ -54,7 +60,7 @@ func (d *DB) SetProgramLifecycle(ctx context.Context, programURL string, disable
 
 // GetIgnoredPrograms returns a map of program URLs that are marked as ignored for a specific platform.
 func (d *DB) GetIgnoredPrograms(ctx context.Context, platform string) (map[string]bool, error) {
-	rows, err := d.sql.QueryContext(ctx, "SELECT url FROM programs WHERE platform = $1 AND is_ignored = 1", platform)
+	rows, err := d.sql.QueryContext(ctx, "SELECT url FROM programs WHERE lower(platform) = lower($1) AND is_ignored = 1", platform)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +80,7 @@ func (d *DB) GetIgnoredPrograms(ctx context.Context, platform string) (map[strin
 // GetActiveProgramCount returns the number of active (not disabled, not ignored) programs for a platform.
 func (d *DB) GetActiveProgramCount(ctx context.Context, platform string) (int, error) {
 	var count int
-	err := d.sql.QueryRowContext(ctx, "SELECT COUNT(*) FROM programs WHERE platform = $1 AND disabled = 0 AND is_ignored = 0", platform).Scan(&count)
+	err := d.sql.QueryRowContext(ctx, "SELECT COUNT(*) FROM programs WHERE lower(platform) = lower($1) AND disabled = 0 AND is_ignored = 0", platform).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -120,7 +126,7 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 	rows, err := tx.QueryContext(ctx, `
 		SELECT p.id, p.url, p.handle
 		FROM programs p
-		WHERE p.platform = $1 AND p.disabled = 0 AND p.is_ignored = 0
+		WHERE lower(p.platform) = lower($1) AND p.disabled = 0 AND p.is_ignored = 0
 		ORDER BY p.id
 		FOR UPDATE
 	`, platform)

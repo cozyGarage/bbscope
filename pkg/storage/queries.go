@@ -394,10 +394,10 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 		JOIN programs p ON t.program_id = p.id
 		LEFT JOIN targets_ai_enhanced a ON a.target_id = t.id
 		WHERE p.is_ignored = 0 AND p.disabled = 0 AND (
-			COALESCE(a.target_ai_normalized, t.target) LIKE $1 ESCAPE '\' OR
-			t.target LIKE $1 ESCAPE '\' OR
-			t.description LIKE $2 ESCAPE '\' OR
-			p.url LIKE $3 ESCAPE '\'
+			lower(COALESCE(a.target_ai_normalized, t.target)) LIKE lower($1) ESCAPE '\' OR
+			lower(t.target) LIKE lower($1) ESCAPE '\' OR
+			lower(t.description) LIKE lower($2) ESCAPE '\' OR
+			lower(p.url) LIKE lower($3) ESCAPE '\'
 		)
 
 		UNION
@@ -417,13 +417,13 @@ func (d *DB) SearchTargets(ctx context.Context, searchTerm string) ([]Entry, err
 			NULL as ai_id,
 			'historical' as source
 		FROM scope_changes c
-		LEFT JOIN programs p3 ON p3.url = c.program_url
-		WHERE (c.target_normalized LIKE $4 ESCAPE '\' OR c.target_ai_normalized LIKE $5 ESCAPE '\' OR c.target_raw LIKE $4 ESCAPE '\' OR c.program_url LIKE $6 ESCAPE '\')
+		LEFT JOIN programs p3 ON rtrim(p3.url, '/') = rtrim(c.program_url, '/')
+		WHERE (lower(c.target_normalized) LIKE lower($4) ESCAPE '\' OR lower(c.target_ai_normalized) LIKE lower($5) ESCAPE '\' OR lower(c.target_raw) LIKE lower($4) ESCAPE '\' OR lower(c.program_url) LIKE lower($6) ESCAPE '\')
 		AND (p3.id IS NULL OR (p3.is_ignored = 0 AND p3.disabled = 0))
 		AND NOT EXISTS (
 			SELECT 1 FROM targets_raw t2
 			JOIN programs p2 ON t2.program_id = p2.id
-			WHERE p2.url = c.program_url
+			WHERE rtrim(p2.url, '/') = rtrim(c.program_url, '/')
 			AND t2.target = c.target_raw
 			AND t2.category = c.category
 		);

@@ -72,6 +72,6 @@ func setIgnoreStatus(ctx context.Context, pattern string, ignored bool) error {
 func init() {
 	dbCmd.AddCommand(ignoreCmd)
 	dbCmd.AddCommand(unignoreCmd)
-	ignoreCmd.Flags().StringP("program-url", "u", "", "Program URL or pattern to ignore")
-	unignoreCmd.Flags().StringP("program-url", "u", "", "Program URL or pattern to unignore")
+	ignoreCmd.Flags().StringP("program-url", "u", "", "Program URL, handle, or substring pattern to ignore")
+	unignoreCmd.Flags().StringP("program-url", "u", "", "Program URL, handle, or substring pattern to unignore")
 }

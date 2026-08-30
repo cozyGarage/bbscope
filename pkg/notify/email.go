@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"strings"
 	"time"
 )
 
@@ -49,7 +50,7 @@ func (e *EmailNotifier) Send(ctx context.Context, event ChangeEvent) error {
 		"\r\n"+
 		"%s\r\n",
 		sanitizeHeaderField(e.config.From),
-		sanitizeHeaderField(e.config.To[0]),
+		emailToHeader(e.config.To),
 		subject,
 		body,
 	)
@@ -135,6 +136,18 @@ func (e *EmailNotifier) sendWithTLS(addr, message string) error {
 	}
 
 	return nil
+}
+
+// emailToHeader joins every recipient into the visible To header. SMTP still
+// delivers via the Rcpt list; listing only To[0] hid everyone else.
+func emailToHeader(recipients []string) string {
+	parts := make([]string, 0, len(recipients))
+	for _, to := range recipients {
+		if s := sanitizeHeaderField(to); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // formatEmailSubject creates an email subject from a change event

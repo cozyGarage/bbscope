@@ -106,7 +106,7 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 	}
 
 	var aiNormalizer ai.Normalizer
-	if useAI {
+	if useAI && useDB {
 		proxyURL, _ := rootCmd.Flags().GetString("proxy")
 		cfg := ai.Config{
 			Provider:           strings.TrimSpace(viper.GetString("ai.provider")),
@@ -216,10 +216,9 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 				utils.Log.Warnf("Could not get program count for %s: %v", p.Name(), err)
 			}
 
-			// PLATFORM-LEVEL SAFETY CHECK: If the poller returns 0 programs, but we have many in the DB,
-			// it's likely the poller failed or there's a temporary API issue. We abort the sync
-			// for this platform to prevent wiping all its programs.
-			if len(handles) == 0 && dbProgramCount > 10 { // Using a threshold > 10
+			// An empty listing against any already-stored programs is the same
+			// wipe signature whether the platform has 1 program or 100.
+			if emptyListingWouldWipe(len(handles), dbProgramCount) {
 				utils.Log.Errorf("Poller for %s returned 0 programs, but database has %d. Aborting sync for this platform to prevent data loss.", p.Name(), dbProgramCount)
 				runErrs = append(runErrs, fmt.Errorf("%s: poller returned 0 programs, database has %d", p.Name(), dbProgramCount))
 				continue
@@ -260,6 +259,14 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		}
 	}
 	return errors.Join(runErrs...)
+}
+
+// emptyListingWouldWipe reports whether syncing an empty handle list would
+// disable programs already stored for the platform. Any non-zero stored count
+// is enough: a one-program platform is exactly the case a truncated listing
+// would wipe.
+func emptyListingWouldWipe(listed, stored int) bool {
+	return listed == 0 && stored > 0
 }
 
 // processProgramsConcurrently processes programs using a worker pool pattern for concurrent fetching.

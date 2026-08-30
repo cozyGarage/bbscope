@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +45,36 @@ func TestTruncate(t *testing.T) {
 			t.Errorf("truncate(%q, %d) = %q, want %q",
 				tc.input, tc.maxLen, result, tc.expected)
 		}
+	}
+}
+
+func TestRenderRecentChangesWaitsForLoad(t *testing.T) {
+	m := NewModel(nil)
+	got := m.renderRecentChanges()
+	if !strings.Contains(got, "Loading recent changes") {
+		t.Fatalf("unloaded dashboard should not claim there are no changes, got %q", got)
+	}
+	if strings.Contains(got, "No recent changes") {
+		t.Fatalf("unloaded dashboard flashed the empty state: %q", got)
+	}
+
+	m.changesLoaded = true
+	got = m.renderRecentChanges()
+	if !strings.Contains(got, "No recent changes") {
+		t.Fatalf("loaded empty dashboard should say no recent changes, got %q", got)
+	}
+}
+
+func TestUpdateClearsErrorOnSuccess(t *testing.T) {
+	m := NewModel(nil)
+	m.err = errors.New("stale")
+	next, _ := m.Update(changesMsg(nil))
+	got := next.(Model)
+	if !got.changesLoaded {
+		t.Fatal("changesMsg should mark changes loaded")
+	}
+	if got.err != nil {
+		t.Fatalf("successful load should clear m.err, got %v", got.err)
 	}
 }
 

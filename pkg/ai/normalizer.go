@@ -650,8 +650,10 @@ func cleanScopeBase(original string) string {
 	if idx := strings.IndexAny(s, "/?#"); idx >= 0 {
 		s = s[:idx]
 	}
-	if at := strings.LastIndex(s, "@"); at >= 0 {
-		s = s[at+1:]
+	// Userinfo is not a hostname. Taking the substring after "@" let
+	// https://evil.com@example.com/ compare as example.com.
+	if strings.Contains(s, "@") {
+		return ""
 	}
 	s = strings.ReplaceAll(s, "*.", "")
 	s = strings.ReplaceAll(s, ".*", "")

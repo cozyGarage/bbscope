@@ -21,7 +21,7 @@ func escapeHTMLText(s string) string {
 // safeHTTPURL returns the URL string when it is http(s); otherwise empty.
 func safeHTTPURL(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" {
+	if err != nil || u.Host == "" || u.User != nil {
 		return ""
 	}
 	switch strings.ToLower(u.Scheme) {

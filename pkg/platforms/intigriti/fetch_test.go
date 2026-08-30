@@ -84,6 +84,79 @@ func TestListAndFetch(t *testing.T) {
 	}
 }
 
+func TestListProgramHandles_AbsoluteDetailURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"maxCount":1,"records":[
+			{"id":"9","maxBounty":{"value":1},"confidentialityLevel":{"id":2},
+			 "webLinks":{"detail":"https://app.intigriti.com/researcher/programs/acme/acme-web/detail"}}
+		]}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	handles, err := newPoller(t).ListProgramHandles(context.Background(), platforms.PollOptions{})
+	if err != nil {
+		t.Fatalf("ListProgramHandles: %v", err)
+	}
+	if len(handles) != 1 || handles[0] != "acme/acme-web" {
+		t.Fatalf("handles = %v, want [acme/acme-web]", handles)
+	}
+}
+
+func TestListProgramHandles_CompanyHandleFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"maxCount":1,"records":[
+			{"id":"9","handle":"web","companyHandle":"acme","maxBounty":{"value":1},"confidentialityLevel":{"id":2},
+			 "webLinks":{"detail":"not-a-path"}}
+		]}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	handles, err := newPoller(t).ListProgramHandles(context.Background(), platforms.PollOptions{})
+	if err != nil {
+		t.Fatalf("ListProgramHandles: %v", err)
+	}
+	if len(handles) != 1 || handles[0] != "acme/web" {
+		t.Fatalf("handles = %v, want [acme/web]", handles)
+	}
+}
+
+func TestListProgramHandles_UnparseableDetailWithID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"maxCount":1,"records":[
+			{"id":"9","maxBounty":{"value":1},"confidentialityLevel":{"id":2},
+			 "webLinks":{"detail":"not-a-path"}}
+		]}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	if _, err := newPoller(t).ListProgramHandles(context.Background(), platforms.PollOptions{}); err == nil {
+		t.Fatal("expected an error when id is present but webLinks.detail is unparseable")
+	}
+}
+
+func TestParseIntigritiProgramURL(t *testing.T) {
+	got, err := parseIntigritiProgramURL("detail=/programs/acme/acme-web/detail")
+	if err != nil {
+		t.Fatalf("query form: %v", err)
+	}
+	if got != "https://app.intigriti.com/researcher/programs/acme/acme-web/detail" {
+		t.Fatalf("query form = %q", got)
+	}
+	got, err = parseIntigritiProgramURL("https://app.intigriti.com/researcher/programs/acme/acme-web/detail")
+	if err != nil {
+		t.Fatalf("absolute URL: %v", err)
+	}
+	if got != "https://app.intigriti.com/researcher/programs/acme/acme-web/detail" {
+		t.Fatalf("absolute URL = %q", got)
+	}
+	if _, err := parseIntigritiProgramURL("garbage"); err == nil {
+		t.Fatal("expected error for garbage detail")
+	}
+}
+
 func TestListProgramHandles_Unauthorized(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

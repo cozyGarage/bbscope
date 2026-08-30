@@ -138,6 +138,9 @@ func (m Model) renderStats() string {
 func (m Model) renderRecentChanges() string {
 	title := m.styles.Subtitle.Render("🔔 Recent Changes")
 
+	if !m.changesLoaded {
+		return title + "\n" + m.styles.Change.Render("Loading recent changes...")
+	}
 	if len(m.recentChanges) == 0 {
 		return title + "\n" + m.styles.Change.Render("No recent changes")
 	}
@@ -179,14 +182,14 @@ func (m Model) renderRecentChanges() string {
 
 // renderPolling renders the live polling view
 func (m Model) renderPolling() string {
-	title := m.styles.Title.Render("⚡ Live Polling")
+	title := m.styles.Title.Render("⚡ Polling (simulated)")
 
 	var content string
 	if m.pollingActive {
-		content = m.styles.Subtitle.Render("Polling platforms...\n\n") +
+		content = m.styles.Subtitle.Render("Simulated polling progress...\n\n") +
 			m.styles.Change.Render(m.pollingStatus)
 	} else {
-		content = m.styles.Subtitle.Render("Press 'p' to start polling")
+		content = m.styles.Subtitle.Render("Press 'p' to run a simulated poll (does not contact platforms)")
 	}
 
 	full := lipgloss.JoinVertical(lipgloss.Left, title, "", content)
@@ -211,16 +214,10 @@ func (m Model) renderHelp() string {
 Keyboard Shortcuts:
 
   d - Dashboard view
-  p - Live polling view
-  s - Search targets
+  p - Polling view (simulated; does not contact platforms)
+  s - Search (not implemented)
   ? - This help screen
   q - Quit application
-
-Navigation:
-
-  Arrow keys / hjkl - Navigate lists
-  Enter - Select item
-  Esc - Go back
 `
 
 	full := lipgloss.JoinVertical(lipgloss.Left, title, m.styles.Change.Render(helpText))

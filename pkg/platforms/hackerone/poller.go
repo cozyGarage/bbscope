@@ -103,6 +103,10 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 				continue
 			}
 
+			if strings.TrimSpace(handle) == "" {
+				continue
+			}
+
 			handles = append(handles, handle)
 		}
 

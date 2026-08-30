@@ -69,6 +69,24 @@ func TestRunPollWithPollers_ListError(t *testing.T) {
 	}
 }
 
+func TestEmptyListingWouldWipe(t *testing.T) {
+	tests := []struct {
+		listed, stored int
+		want           bool
+	}{
+		{0, 0, false},
+		{0, 1, true},
+		{0, 11, true},
+		{1, 1, false},
+		{1, 0, false},
+	}
+	for _, tt := range tests {
+		if got := emptyListingWouldWipe(tt.listed, tt.stored); got != tt.want {
+			t.Errorf("emptyListingWouldWipe(%d, %d) = %v, want %v", tt.listed, tt.stored, got, tt.want)
+		}
+	}
+}
+
 func TestRunPollWithPollers_EmptyHandles(t *testing.T) {
 	mock := platforms.NewMockPoller("mock")
 	mock.Handles = nil

@@ -127,6 +127,8 @@ func TestURL(t *testing.T) {
 		{"no host", "http://", true},
 		{"javascript scheme", "javascript://example.com/%0Aalert(1)", true},
 		{"ftp scheme", "ftp://example.com/file", true},
+		{"userinfo smuggling trusted host", "https://evil.com@example.com/path", true},
+		{"userinfo smuggling evil host", "https://trusted.com@evil.com/path", true},
 	}
 
 	for _, tt := range tests {

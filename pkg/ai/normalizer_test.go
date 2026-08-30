@@ -169,6 +169,7 @@ func TestVariantAllowedRejectsWidening(t *testing.T) {
 		{"wildcard over the original apex", "example.com", "*.example.com", false},
 		{"suffix match on a truncated original", "app.*", "evil.app", false},
 		{"path-scoped URL restated as apex", "https://example.com/api", "example.com", false},
+		{"userinfo original must not authorize a subdomain", "https://evil.com@example.com/", "api.example.com", false},
 
 		// Restating or narrowing — all must be accepted.
 		{"exact restatement", "example.com", "example.com", true},
@@ -209,5 +210,14 @@ func TestMergeNormalizedDropsWidenedVariants(t *testing.T) {
 	}
 	if out[0].URI != "shop.example.com" || out[0].Description != "storefront" || !out[0].InScope {
 		t.Fatalf("original item was altered: %#v", out[0])
+	}
+}
+
+func TestCleanScopeBaseRejectsUserinfo(t *testing.T) {
+	if got := cleanScopeBase("https://evil.com@example.com/"); got != "" {
+		t.Fatalf("cleanScopeBase(userinfo URL) = %q, want empty", got)
+	}
+	if got := cleanScopeBase("example.com"); got != "example.com" {
+		t.Fatalf("cleanScopeBase(plain host) = %q", got)
 	}
 }

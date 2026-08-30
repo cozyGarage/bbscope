@@ -380,7 +380,10 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 
 		// Iterating over each element in the programs array
 		result.ForEach(func(key, value gjson.Result) bool {
-			programURL := value.Get("briefUrl").String()
+			programURL := strings.TrimSpace(value.Get("briefUrl").String())
+			if programURL == "" {
+				return true
+			}
 			accessStatus := value.Get("accessStatus").String()
 
 			// Maintain a counter of unique program URLs found
