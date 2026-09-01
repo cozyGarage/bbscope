@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 )
 
 // SetProgramIgnoredStatus sets the is_ignored flag for a program.
@@ -60,7 +62,8 @@ func (d *DB) SetProgramLifecycle(ctx context.Context, programURL string, disable
 
 // GetIgnoredPrograms returns a map of program URLs that are marked as ignored for a specific platform.
 func (d *DB) GetIgnoredPrograms(ctx context.Context, platform string) (map[string]bool, error) {
-	rows, err := d.sql.QueryContext(ctx, "SELECT url FROM programs WHERE lower(platform) = lower($1) AND is_ignored = 1", platform)
+	names := platforms.MatchingNames(platform)
+	rows, err := d.sql.QueryContext(ctx, "SELECT url FROM programs WHERE lower(platform) = ANY($1) AND is_ignored = 1", pgtype.FlatArray[string](names))
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +83,8 @@ func (d *DB) GetIgnoredPrograms(ctx context.Context, platform string) (map[strin
 // GetActiveProgramCount returns the number of active (not disabled, not ignored) programs for a platform.
 func (d *DB) GetActiveProgramCount(ctx context.Context, platform string) (int, error) {
 	var count int
-	err := d.sql.QueryRowContext(ctx, "SELECT COUNT(*) FROM programs WHERE lower(platform) = lower($1) AND disabled = 0 AND is_ignored = 0", platform).Scan(&count)
+	names := platforms.MatchingNames(platform)
+	err := d.sql.QueryRowContext(ctx, "SELECT COUNT(*) FROM programs WHERE lower(platform) = ANY($1) AND disabled = 0 AND is_ignored = 0", pgtype.FlatArray[string](names)).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -96,6 +100,10 @@ func (d *DB) GetActiveProgramCount(ctx context.Context, platform string) (int, e
 func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledProgramURLs []string) ([]Change, error) {
 	now := time.Now().UTC()
 	changes := make([]Change, 0)
+	if platforms.KnownPlatform(platform) {
+		platform = platforms.CanonicalName(platform)
+	}
+	matchingPlatforms := platforms.MatchingNames(platform)
 
 	// 1. Create a set of polled URLs for efficient lookup.
 	polledURLSet := make(map[string]struct{}, len(polledProgramURLs))
@@ -126,10 +134,10 @@ func (d *DB) SyncPlatformPrograms(ctx context.Context, platform string, polledPr
 	rows, err := tx.QueryContext(ctx, `
 		SELECT p.id, p.url, p.handle
 		FROM programs p
-		WHERE lower(p.platform) = lower($1) AND p.disabled = 0 AND p.is_ignored = 0
+		WHERE lower(p.platform) = ANY($1) AND p.disabled = 0 AND p.is_ignored = 0
 		ORDER BY p.id
 		FOR UPDATE
-	`, platform)
+	`, pgtype.FlatArray[string](matchingPlatforms))
 	if err != nil {
 		return nil, fmt.Errorf("querying for active programs: %w", err)
 	}

@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
-	"time"
 )
 
 // WebhookNotifier sends notifications to a custom webhook
@@ -19,7 +19,7 @@ type WebhookNotifier struct {
 func NewWebhookNotifier(cfg *WebhookConfig) *WebhookNotifier {
 	return &WebhookNotifier{
 		config: cfg,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: newWebhookHTTPClient(),
 	}
 }
 
@@ -33,7 +33,7 @@ func (w *WebhookNotifier) Send(ctx context.Context, event ChangeEvent) error {
 	if !shouldSend(w.config.Events, event.Type) {
 		return nil
 	}
-	if err := webhookURLAllowed(w.config.URL); err != nil {
+	if err := webhookDestinationAllowed(ctx, w.config.URL, net.DefaultResolver.LookupIPAddr); err != nil {
 		return fmt.Errorf("webhook destination: %w", err)
 	}
 

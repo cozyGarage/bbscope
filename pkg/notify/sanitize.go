@@ -1,11 +1,15 @@
 package notify
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"html"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 var (
@@ -150,6 +154,79 @@ func webhookURLAllowed(raw string) error {
 		return errMetadataWebhookURL
 	}
 	return nil
+}
+
+type webhookIPLookup func(context.Context, string) ([]net.IPAddr, error)
+
+// webhookDestinationAllowed extends the syntax/literal-IP check with DNS
+// resolution. Every resolved address is checked so round-robin DNS cannot hide
+// a link-local metadata address behind an otherwise public hostname.
+func webhookDestinationAllowed(ctx context.Context, raw string, lookup webhookIPLookup) error {
+	if err := webhookURLAllowed(raw); err != nil {
+		return err
+	}
+	u, _ := url.Parse(strings.TrimSpace(raw))
+	host := u.Hostname()
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	ips, err := lookup(ctx, host)
+	if err != nil {
+		return fmt.Errorf("resolve webhook host %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("resolve webhook host %q: no addresses", host)
+	}
+	for _, resolved := range ips {
+		if isBlockedWebhookIP(resolved.IP) {
+			return errMetadataWebhookURL
+		}
+	}
+	return nil
+}
+
+func newWebhookHTTPClient() *http.Client {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok || base == nil {
+		base = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+	transport := base.Clone()
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("resolve webhook dial host %q: no addresses", host)
+		}
+		for _, resolved := range ips {
+			if isBlockedWebhookIP(resolved.IP) {
+				return nil, errMetadataWebhookURL
+			}
+		}
+		var dialErrs []error
+		for _, resolved := range ips {
+			conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(resolved.IP.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			dialErrs = append(dialErrs, dialErr)
+		}
+		return nil, errors.Join(dialErrs...)
+	}
+
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			return webhookDestinationAllowed(req.Context(), req.URL.String(), net.DefaultResolver.LookupIPAddr)
+		},
+	}
 }
 
 func isBlockedWebhookIP(ip net.IP) bool {

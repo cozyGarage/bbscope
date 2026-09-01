@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/cozyGarage/bbscope/v2/internal/utils"
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
@@ -28,6 +29,9 @@ var ErrProgramURLOwned = errors.New("program URL is already owned by another pla
 // platform/handle. We refuse that steal instead.
 func (d *DB) getOrCreateProgramTx(ctx context.Context, tx *sql.Tx, programURL, platform, handle string) (int64, error) {
 	programURL = NormalizeProgramURL(programURL)
+	if platforms.KnownPlatform(platform) {
+		platform = platforms.CanonicalName(platform)
+	}
 	var programID int64
 	var existingPlatform string
 
@@ -40,10 +44,10 @@ func (d *DB) getOrCreateProgramTx(ctx context.Context, tx *sql.Tx, programURL, p
 		LIMIT 1
 	`, programURL).Scan(&programID, &existingPlatform)
 	if err == nil {
-		if !strings.EqualFold(existingPlatform, platform) {
+		if platforms.CanonicalName(existingPlatform) != platforms.CanonicalName(platform) {
 			return 0, fmt.Errorf("%w: %s belongs to %s", ErrProgramURLOwned, programURL, existingPlatform)
 		}
-		if err := updateOwnedProgramTx(ctx, tx, programID, handle, programURL); err != nil {
+		if err := updateOwnedProgramTx(ctx, tx, programID, handle, programURL, platform); err != nil {
 			return 0, err
 		}
 		return programID, nil
@@ -74,7 +78,7 @@ func (d *DB) getOrCreateProgramTx(ctx context.Context, tx *sql.Tx, programURL, p
 // updateOwnedProgramTx refreshes handle/last_seen and canonicalizes url.
 // The URL rewrite runs inside a savepoint: a unique-violation would otherwise
 // abort the whole transaction and make the metadata-only fallback unreachable.
-func updateOwnedProgramTx(ctx context.Context, tx *sql.Tx, programID int64, handle, programURL string) error {
+func updateOwnedProgramTx(ctx context.Context, tx *sql.Tx, programID int64, handle, programURL, platform string) error {
 	if _, err := tx.ExecContext(ctx, `SAVEPOINT program_url_rewrite`); err != nil {
 		return fmt.Errorf("creating program URL savepoint: %w", err)
 	}
@@ -82,10 +86,11 @@ func updateOwnedProgramTx(ctx context.Context, tx *sql.Tx, programID int64, hand
 		UPDATE programs
 		SET handle = $1,
 		    url = $2,
+		    platform = $3,
 		    last_seen_at = CURRENT_TIMESTAMP,
 		    disabled = 0
-		WHERE id = $3
-	`, handle, programURL, programID)
+		WHERE id = $4
+	`, handle, programURL, platform, programID)
 	if err != nil {
 		if _, rbErr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT program_url_rewrite`); rbErr != nil {
 			return fmt.Errorf("updating program: %w", errors.Join(err, rbErr))
@@ -96,10 +101,11 @@ func updateOwnedProgramTx(ctx context.Context, tx *sql.Tx, programID int64, hand
 		if _, err2 := tx.ExecContext(ctx, `
 			UPDATE programs
 			SET handle = $1,
+			    platform = $2,
 			    last_seen_at = CURRENT_TIMESTAMP,
 			    disabled = 0
-			WHERE id = $2
-		`, handle, programID); err2 != nil {
+			WHERE id = $3
+		`, handle, platform, programID); err2 != nil {
 			return fmt.Errorf("updating program: %w", err2)
 		}
 		return nil
@@ -138,6 +144,9 @@ func (d *DB) UpsertProgramEntries(ctx context.Context, programURL, platform, han
 func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, platform, handle string, entries []UpsertEntry, opts UpsertOptions) ([]Change, error) {
 	now := time.Now().UTC()
 	programURL = NormalizeProgramURL(programURL)
+	if platforms.KnownPlatform(platform) {
+		platform = platforms.CanonicalName(platform)
+	}
 
 	// Hold one transaction across read/diff/write so concurrent upserts for the
 	// same program cannot compute conflicting diffs from a stale snapshot.
@@ -785,6 +794,9 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 func BuildEntries(programURL, platform, handle string, items []TargetItem) ([]UpsertEntry, error) {
 	if programURL == "" || platform == "" {
 		return nil, errors.New("invalid program identifiers")
+	}
+	if platforms.KnownPlatform(platform) {
+		platform = platforms.CanonicalName(platform)
 	}
 	out := make([]UpsertEntry, 0, len(items))
 	for _, it := range items {

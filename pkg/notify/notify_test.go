@@ -86,6 +86,18 @@ func TestWebhookNotifier_RejectsMetadata(t *testing.T) {
 	}
 }
 
+func TestWebhookNotifier_RejectsRedirectToMetadata(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	n := NewWebhookNotifier(&WebhookConfig{URL: srv.URL})
+	if err := n.Send(context.Background(), sampleEvent()); err == nil {
+		t.Fatal("redirect to metadata must be rejected")
+	}
+}
+
 func TestWebhookNotifier_EventFilter(t *testing.T) {
 	var received atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

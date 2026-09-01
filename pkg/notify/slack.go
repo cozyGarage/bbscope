@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
-	"time"
 )
 
 // SlackNotifier sends notifications to Slack
@@ -19,7 +19,7 @@ type SlackNotifier struct {
 func NewSlackNotifier(cfg *SlackConfig) *SlackNotifier {
 	return &SlackNotifier{
 		config: cfg,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: newWebhookHTTPClient(),
 	}
 }
 
@@ -34,7 +34,7 @@ func (s *SlackNotifier) Send(ctx context.Context, event ChangeEvent) error {
 		return nil
 	}
 
-	if err := webhookURLAllowed(s.config.WebhookURL); err != nil {
+	if err := webhookDestinationAllowed(ctx, s.config.WebhookURL, net.DefaultResolver.LookupIPAddr); err != nil {
 		return fmt.Errorf("slack webhook destination: %w", err)
 	}
 

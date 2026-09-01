@@ -347,3 +347,15 @@ func TestSplitPlatformListExpandsAliases(t *testing.T) {
 		t.Fatalf("all should be dropped, got %v", splitPlatformList("all"))
 	}
 }
+
+func TestBuildEntriesCanonicalizesKnownPlatformAlias(t *testing.T) {
+	entries, err := BuildEntries("https://bugcrowd.com/acme", "Bugcrowd", "acme", []TargetItem{{
+		URI: "example.com", Category: "url", InScope: true,
+	}})
+	if err != nil {
+		t.Fatalf("BuildEntries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Platform != "bc" {
+		t.Fatalf("platform = %q, want bc", entries[0].Platform)
+	}
+}

@@ -987,3 +987,43 @@ func TestIntegration_ListEntriesExpandsPlatformAliases(t *testing.T) {
 		t.Fatalf("h1 filter should miss bc rows, got %d", len(wrong))
 	}
 }
+
+func TestIntegration_PollerHealsStoredLongPlatformAlias(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
+	programURL := "https://bugcrowd.com/bbscope-owned-alias-" + suffix
+	handle := "bbscope-owned-alias-" + suffix
+
+	t.Cleanup(func() {
+		_, _ = db.sql.Exec(`DELETE FROM targets_ai_enhanced WHERE target_id IN (
+			SELECT tr.id FROM targets_raw tr JOIN programs p ON tr.program_id = p.id WHERE p.url = $1)`, programURL)
+		_, _ = db.sql.Exec(`DELETE FROM targets_raw WHERE program_id IN (SELECT id FROM programs WHERE url = $1)`, programURL)
+		_, _ = db.sql.Exec(`DELETE FROM scope_changes WHERE program_url = $1`, programURL)
+		_, _ = db.sql.Exec(`DELETE FROM programs WHERE url = $1`, programURL)
+	})
+
+	entries := mustBuildEntries(t, programURL, "bc", handle, []TargetItem{{
+		URI: "alias-heal-" + suffix + ".example.com", Category: "url", InScope: true,
+	}})
+	if _, err := db.UpsertProgramEntries(ctx, programURL, "bc", handle, entries); err != nil {
+		t.Fatalf("initial upsert: %v", err)
+	}
+	if _, err := db.sql.ExecContext(ctx, `UPDATE programs SET platform = 'bugcrowd' WHERE url = $1`, programURL); err != nil {
+		t.Fatalf("seed long alias: %v", err)
+	}
+
+	if count, err := db.GetActiveProgramCount(ctx, "bc"); err != nil || count != 1 {
+		t.Fatalf("GetActiveProgramCount(bc) = %d, %v; want long alias row counted", count, err)
+	}
+	if _, err := db.UpsertProgramEntries(ctx, programURL, "bc", handle, entries); err != nil {
+		t.Fatalf("canonical poller upsert must accept long alias owner: %v", err)
+	}
+	var stored string
+	if err := db.sql.QueryRowContext(ctx, `SELECT platform FROM programs WHERE url = $1`, programURL).Scan(&stored); err != nil {
+		t.Fatalf("read healed platform: %v", err)
+	}
+	if stored != "bc" {
+		t.Fatalf("stored platform = %q, want canonical bc", stored)
+	}
+}

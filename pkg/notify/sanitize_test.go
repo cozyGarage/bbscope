@@ -1,6 +1,8 @@
 package notify
 
 import (
+	"context"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +199,14 @@ func TestWebhookURLAllowed(t *testing.T) {
 	}
 	if err := webhookURLAllowed("https://user:pass@example.com/x"); err == nil {
 		t.Fatal("userinfo must be rejected")
+	}
+}
+
+func TestWebhookDestinationRejectsDNSResolvedMetadata(t *testing.T) {
+	lookup := func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("169.254.169.254")}}, nil
+	}
+	if err := webhookDestinationAllowed(context.Background(), "https://attacker.example/hook", lookup); err == nil {
+		t.Fatal("hostname resolving to metadata must be rejected")
 	}
 }

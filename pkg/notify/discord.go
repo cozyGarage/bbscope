@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 )
@@ -19,7 +20,7 @@ type DiscordNotifier struct {
 func NewDiscordNotifier(cfg *DiscordConfig) *DiscordNotifier {
 	return &DiscordNotifier{
 		config: cfg,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: newWebhookHTTPClient(),
 	}
 }
 
@@ -34,7 +35,7 @@ func (d *DiscordNotifier) Send(ctx context.Context, event ChangeEvent) error {
 		return nil
 	}
 
-	if err := webhookURLAllowed(d.config.WebhookURL); err != nil {
+	if err := webhookDestinationAllowed(ctx, d.config.WebhookURL, net.DefaultResolver.LookupIPAddr); err != nil {
 		return fmt.Errorf("discord webhook destination: %w", err)
 	}
 

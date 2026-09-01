@@ -97,33 +97,43 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return built, nil
 	}
 
-	// Authenticate once and reuse pollers across ticks. Rebuilding every
-	// interval re-ran Bugcrowd/YesWeHack login+TOTP and called SetupProxy again.
-	pollers, err := rebuildPollers()
-	if err != nil {
-		utils.Log.Errorf("Failed to build pollers: %v", err)
-	}
+	// Authenticate once and reuse pollers across ticks. If only some pollers
+	// authenticate, keep the usable subset for this tick but retry the build on
+	// the next one so a transient failure cannot remove a platform forever.
+	var pollers []platforms.PlatformPoller
+	rebuildPending := true
 
 	runOnce := func() error {
 		pollCmd.SetContext(ctx)
-		if len(pollers) == 0 {
+		var partialBuildErr error
+		if rebuildPending || len(pollers) == 0 {
 			rebuilt, buildErr := rebuildPollers()
-			if buildErr != nil {
+			rebuildPending = buildErr != nil
+			if len(rebuilt) == 0 {
 				return buildErr
 			}
 			pollers = rebuilt
+			if buildErr != nil {
+				partialBuildErr = buildErr
+				utils.Log.Warnf("Some pollers could not be built; using the available platforms and retrying next tick: %v", buildErr)
+			}
 		}
 		err := runPollWithPollers(pollCmd, pollers)
-		if err == nil || !looksLikeAuthError(err) {
-			return err
+		if err == nil {
+			return partialBuildErr
+		}
+		if !looksLikeAuthError(err) {
+			return errors.Join(partialBuildErr, err)
 		}
 		utils.Log.Warnf("Auth error during poll, re-authenticating: %v", err)
 		rebuilt, buildErr := rebuildPollers()
 		if buildErr != nil {
-			pollers = nil
+			pollers = rebuilt
+			rebuildPending = true
 			return fmt.Errorf("re-authenticate: %w", errors.Join(err, buildErr))
 		}
 		pollers = rebuilt
+		rebuildPending = false
 		return runPollWithPollers(pollCmd, pollers)
 	}
 

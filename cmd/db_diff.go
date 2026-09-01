@@ -47,7 +47,11 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	program, _ := cmd.Flags().GetString("program")
 	onlyAdded, _ := cmd.Flags().GetBool("only-added")
 	onlyRemoved, _ := cmd.Flags().GetBool("only-removed")
-	format, _ := cmd.Flags().GetString("format")
+	rawFormat, _ := cmd.Flags().GetString("format")
+	format, err := normalizeDataFormat(rawFormat, "text", "json", "csv")
+	if err != nil {
+		return err
+	}
 
 	// Parse timestamps
 	from, err := time.Parse("2006-01-02", fromStr)

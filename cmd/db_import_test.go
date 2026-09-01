@@ -62,6 +62,29 @@ func TestParseImportJSONInvalid(t *testing.T) {
 	}
 }
 
+func TestNormalizeImportFormat(t *testing.T) {
+	for _, input := range []string{"JSON", " csv "} {
+		if _, err := normalizeDataFormat(input, "json", "csv"); err != nil {
+			t.Fatalf("normalizeDataFormat(%q): %v", input, err)
+		}
+	}
+	if _, err := normalizeDataFormat("yaml", "json", "csv"); err == nil {
+		t.Fatal("unknown import format must be rejected")
+	}
+}
+
+func TestGroupEntriesCanonicalizesKnownPlatformAlias(t *testing.T) {
+	order, _, _ := groupEntriesForImport([]storage.Entry{{
+		ProgramURL: "https://bugcrowd.com/acme",
+		Platform:   "Bugcrowd",
+		TargetRaw:  "example.com",
+		Category:   "url",
+	}})
+	if len(order) != 1 || order[0].platform != "bc" {
+		t.Fatalf("grouped platform = %q, want bc", order[0].platform)
+	}
+}
+
 // TestParseImportCSVReadsAllColumns pins the fix for the truncated reader,
 // which took only the first six columns and dropped in_scope, is_bbp,
 // description and source — importing every target as in-scope regardless.

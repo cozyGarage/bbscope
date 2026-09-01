@@ -34,14 +34,18 @@ Examples:
 	RunE: runExport,
 }
 
-func normalizeExportFormat(format string) (string, error) {
+func normalizeDataFormat(format string, allowed ...string) (string, error) {
 	f := strings.ToLower(strings.TrimSpace(format))
-	switch f {
-	case "json", "csv":
-		return f, nil
-	default:
-		return "", fmt.Errorf("unknown format: %s (use json or csv)", format)
+	for _, candidate := range allowed {
+		if f == candidate {
+			return f, nil
+		}
 	}
+	return "", fmt.Errorf("unknown format: %s (use %s)", format, strings.Join(allowed, ", "))
+}
+
+func normalizeExportFormat(format string) (string, error) {
+	return normalizeDataFormat(format, "json", "csv")
 }
 
 func runExport(cmd *cobra.Command, args []string) error {

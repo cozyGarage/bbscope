@@ -42,6 +42,17 @@ func sampleChanges() []storage.Change {
 	}
 }
 
+func TestNormalizeDiffFormat(t *testing.T) {
+	for _, input := range []string{"TEXT", " json ", "csv"} {
+		if _, err := normalizeDataFormat(input, "text", "json", "csv"); err != nil {
+			t.Fatalf("normalizeDataFormat(%q): %v", input, err)
+		}
+	}
+	if _, err := normalizeDataFormat("yaml", "text", "json", "csv"); err == nil {
+		t.Fatal("unknown diff format must be rejected instead of falling back to text")
+	}
+}
+
 // TestOutputDiffCSV parses the output rather than string-matching it, so the
 // test confirms the CSV is well formed rather than that it looks a certain way.
 func TestOutputDiffCSV(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 	"github.com/cozyGarage/bbscope/v2/pkg/storage"
 )
 
@@ -41,7 +42,11 @@ Examples:
 
 func runImport(cmd *cobra.Command, args []string) error {
 	file, _ := cmd.Flags().GetString("file")
-	format, _ := cmd.Flags().GetString("format")
+	rawFormat, _ := cmd.Flags().GetString("format")
+	format, err := normalizeDataFormat(rawFormat, "json", "csv")
+	if err != nil {
+		return err
+	}
 
 	// Open input
 	var input io.Reader
@@ -166,6 +171,9 @@ func groupEntriesForImport(entries []storage.Entry) ([]programKey, map[programKe
 		platform := e.Platform
 		if platform == "" {
 			platform = "custom"
+		}
+		if platforms.KnownPlatform(platform) {
+			platform = platforms.CanonicalName(platform)
 		}
 		programURL := e.ProgramURL
 		if programURL == "" {

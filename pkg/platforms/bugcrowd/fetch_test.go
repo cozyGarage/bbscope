@@ -209,6 +209,34 @@ func TestGetProgramHandles_SkipsEmptyBriefURL(t *testing.T) {
 	}
 }
 
+func TestGetProgramHandles_CountsEveryEmptyBriefURLRow(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests > 1 {
+			_, _ = io.WriteString(w, `{"engagements":[],"paginationMeta":{"totalCount":2}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"engagements":[
+			{"briefUrl":"","accessStatus":"open"},
+			{"briefUrl":"","accessStatus":"open"}
+		],"paginationMeta":{"totalCount":2}}`)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	got, err := GetProgramHandles("tok", "bug_bounty", false)
+	if err != nil {
+		t.Fatalf("GetProgramHandles: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("handles = %v, want none", got)
+	}
+	if requests != 1 {
+		t.Fatalf("listing made %d requests, want 1; every blank row must count toward totalCount", requests)
+	}
+}
+
 func TestGetProgramHandles_WAFBanned(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
