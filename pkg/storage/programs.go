@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 // SetProgramIgnoredStatus sets the is_ignored flag for a program.
@@ -287,11 +288,14 @@ func (d *DB) AddCustomTarget(ctx context.Context, target, category, programURL s
 		return false, fmt.Errorf("upserting custom program: %w", err)
 	}
 
+	category = scope.NormalizeCategory(category)
+	identity := NormalizeTarget(target)
+
 	targetExists := false
 	var exists int
 	err = tx.QueryRowContext(ctx, `
-		SELECT 1 FROM targets_raw WHERE program_id = $1 AND category = $2 AND target = $3 LIMIT 1
-	`, programID, category, target).Scan(&exists)
+		SELECT 1 FROM targets_raw WHERE program_id = $1 AND category = $2 AND target_identity = $3 LIMIT 1
+	`, programID, category, identity).Scan(&exists)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("checking existing custom target: %w", err)
 	}
@@ -300,11 +304,11 @@ func (d *DB) AddCustomTarget(ctx context.Context, target, category, programURL s
 	}
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO targets_raw(program_id, target, category, in_scope, is_bbp, first_seen_at, last_seen_at)
-		VALUES($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		ON CONFLICT(program_id, category, target) DO UPDATE SET
+		INSERT INTO targets_raw(program_id, target, category, target_identity, in_scope, is_bbp, first_seen_at, last_seen_at)
+		VALUES($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(program_id, category, target_identity) DO UPDATE SET
 			last_seen_at = CURRENT_TIMESTAMP
-	`, programID, target, category, boolToInt(true), boolToInt(false))
+	`, programID, target, category, identity, boolToInt(true), boolToInt(false))
 	if err != nil {
 		return false, fmt.Errorf("upserting custom target: %w", err)
 	}

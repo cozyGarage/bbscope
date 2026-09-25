@@ -201,7 +201,7 @@ func groupEntriesForImport(entries []storage.Entry) ([]programKey, map[programKe
 			baseCat = e.Category
 		}
 
-		// The unique key in targets_raw is (program_id, category, target).
+		// Storage identity is (program_id, normalized category, target_identity).
 		// Indexing by raw target alone collapsed a second category for the
 		// same string into the first item and dropped it on import.
 		identity := raw + "|" + baseCat

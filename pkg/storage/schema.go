@@ -81,6 +81,7 @@ type migration struct {
 var migrations = []migration{
 	{version: 1, name: "initial_schema", stmts: schema},
 	{version: 2, name: "canonicalize_program_urls_and_targets", fn: canonicalizeProgramURLsAndTargets},
+	{version: 3, name: "target_identity_unique", fn: addCanonicalTargetIdentity},
 }
 
 // applyMigrations ensures the schema_migrations bookkeeping table exists and
@@ -349,6 +350,67 @@ func mergeDuplicateTargets(tx *sql.Tx) error {
 				_ = err
 			}
 		}
+	}
+	return nil
+}
+
+// addCanonicalTargetIdentity stores NormalizeTarget(target) and enforces it.
+// The raw target column keeps its spelling for display and export. category is
+// rewritten with the same NormalizeCategory identityKey uses, so the unique
+// key matches the in-memory identity. A leftover collision fails the migration.
+func addCanonicalTargetIdentity(tx *sql.Tx) error {
+	if err := canonicalizeProgramURLsAndTargets(tx); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE targets_raw ADD COLUMN target_identity TEXT`); err != nil {
+		return fmt.Errorf("adding target_identity: %w", err)
+	}
+
+	rows, err := tx.Query(`SELECT id, target, category FROM targets_raw ORDER BY id ASC`)
+	if err != nil {
+		return fmt.Errorf("listing targets for identity backfill: %w", err)
+	}
+	type row struct {
+		id          int64
+		target, cat string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.target, &r.cat); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, r := range pending {
+		identity := NormalizeTarget(r.target)
+		cat := scope.NormalizeCategory(r.cat)
+		if _, err := tx.Exec(`
+			UPDATE targets_raw
+			SET target_identity = $1, category = $2
+			WHERE id = $3
+		`, identity, cat, r.id); err != nil {
+			return fmt.Errorf("backfilling target identity for id %d: %w", r.id, err)
+		}
+	}
+	if _, err := tx.Exec(`ALTER TABLE targets_raw ALTER COLUMN target_identity SET NOT NULL`); err != nil {
+		return fmt.Errorf("setting target_identity NOT NULL: %w", err)
+	}
+	if _, err := tx.Exec(`
+		ALTER TABLE targets_raw
+		ADD CONSTRAINT targets_raw_program_category_identity_key
+		UNIQUE (program_id, category, target_identity)
+	`); err != nil {
+		return fmt.Errorf("creating target identity unique constraint: %w", err)
 	}
 	return nil
 }
