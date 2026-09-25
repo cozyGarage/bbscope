@@ -335,7 +335,7 @@ var shellCmd = &cobra.Command{
 		fmt.Printf("Connecting to %s...\n", utils.RedactURL(dbURL))
 		fmt.Println("bbscope database schema:")
 		fmt.Println("  programs      (id, platform, handle, url, disabled, is_ignored, last_seen_at)")
-		fmt.Println("  targets_raw   (id, program_id, target, category, in_scope, is_bbp, description, last_seen_at)")
+		fmt.Println("  targets_raw   (id, program_id, target, target_identity, category, in_scope, is_bbp, description, last_seen_at)")
 		fmt.Println("  scope_changes (id, program_url, platform, change_type, target_raw, target_normalized, category, is_bbp, occurred_at)")
 		fmt.Println("  targets_ai_enhanced (id, target_id, target_ai_normalized, category, in_scope)")
 		fmt.Println("")

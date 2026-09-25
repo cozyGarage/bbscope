@@ -487,11 +487,14 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 		inScopes := make([]int, len(toAdd))
 		isBBPs := make([]int, len(toAdd))
 
-		// Build a lookup map for matching returned rows
+		// Build a lookup map for matching returned rows. category and
+		// target_identity are the canonical identity; target stays the raw URI.
 		addEntryByKey := make(map[string]UpsertEntry, len(toAdd))
+		identities := make([]string, len(toAdd))
 		for i, e := range toAdd {
 			targets[i] = e.TargetRaw
-			categories[i] = e.Category
+			categories[i] = scope.NormalizeCategory(e.Category)
+			identities[i] = NormalizeTarget(e.TargetRaw)
 			if e.Description != "" {
 				descriptions[i] = sql.NullString{String: e.Description, Valid: true}
 			}
@@ -500,18 +503,19 @@ func (d *DB) UpsertProgramEntriesWithOptions(ctx context.Context, programURL, pl
 			addEntryByKey[identityKey(e.TargetRaw, e.Category)] = e
 		}
 
-		// Bulk insert using UNNEST - returns id, target, category to match back
+		// Bulk insert using UNNEST - returns id, target, category to match back.
+		// ON CONFLICT keeps the stored raw target so the first spelling wins.
 		rows, err := tx.QueryContext(ctx, `
-			INSERT INTO targets_raw(program_id, target, category, description, in_scope, is_bbp, first_seen_at, last_seen_at)
-			SELECT $1, t.target, t.category, t.description, t.in_scope, t.is_bbp, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-			FROM UNNEST($2::text[], $3::text[], $4::text[], $5::int[], $6::int[]) AS t(target, category, description, in_scope, is_bbp)
-			ON CONFLICT(program_id, category, target) DO UPDATE SET
+			INSERT INTO targets_raw(program_id, target, category, target_identity, description, in_scope, is_bbp, first_seen_at, last_seen_at)
+			SELECT $1, t.target, t.category, t.target_identity, t.description, t.in_scope, t.is_bbp, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			FROM UNNEST($2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::int[]) AS t(target, category, target_identity, description, in_scope, is_bbp)
+			ON CONFLICT(program_id, category, target_identity) DO UPDATE SET
 				description = excluded.description,
 				in_scope = excluded.in_scope,
 				is_bbp = excluded.is_bbp,
 				last_seen_at = CURRENT_TIMESTAMP
 			RETURNING id, target, category
-		`, programID, pgtype.FlatArray[string](targets), pgtype.FlatArray[string](categories), pgtype.FlatArray[sql.NullString](descriptions), pgtype.FlatArray[int](inScopes), pgtype.FlatArray[int](isBBPs))
+		`, programID, pgtype.FlatArray[string](targets), pgtype.FlatArray[string](categories), pgtype.FlatArray[string](identities), pgtype.FlatArray[sql.NullString](descriptions), pgtype.FlatArray[int](inScopes), pgtype.FlatArray[int](isBBPs))
 		if err != nil {
 			return nil, fmt.Errorf("bulk inserting targets: %w", err)
 		}

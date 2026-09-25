@@ -58,7 +58,7 @@ Route review by path, not GitHub handles:
 - [ ] Empty incoming scope against existing targets returns `ErrAbortingScopeWipe`.
 - [ ] `SyncPlatformPrograms` soft-disables; it does not delete targets.
 - [ ] Partial listings cannot disable half or more of a platform (`shouldAbortPartialSync`; full wipe always aborted).
-- [ ] Identity uses `NormalizeTarget` + `NormalizeCategory`. Duplicate keys in one payload are dropped with a warning, first entry wins.
+- [ ] Identity uses `NormalizeTarget` + `NormalizeCategory`, enforced by `UNIQUE (program_id, category, target_identity)`. `target` keeps the original spelling. Duplicate keys in one payload are dropped with a warning, first entry wins.
 - [ ] User-controlled `LIKE` patterns are escaped (`%`, `_`, `\`).
 - [ ] `--platform` filters accept both short names (`h1`) and long names (`hackerone`) via `platforms.MatchingNames`.
 
@@ -133,15 +133,15 @@ Do not add a new exclude without a one-line rationale here and in `.golangci.yml
 
 ---
 
-## Current findings (2026-08-30)
+## Current findings (updated 2026-09-25)
 
-Review of `main` against this playbook, with high/medium items fixed in the accompanying PR.
+Review of `main` against this playbook. High and medium items through the September identity follow-up are fixed.
 
 ### Open / follow-ups
 
 | ID | Severity | Status | Notes |
 |----|----------|--------|-------|
-| F1 | Medium | Open | Optional unique indexes on *canonical* target/URL expressions after schema v2 proves clean on real databases |
+| F1 | Medium | Fixed | Schema v3 stores `NormalizeTarget` in `targets_raw.target_identity` and enforces `UNIQUE (program_id, category, target_identity)`. `target` keeps the original spelling. A leftover collision fails the migration. |
 | F2 | Low | Open | `OpenWithPool` auto-creates a missing database — surprising in some prod setups; leaving as-is to avoid breaking existing `Open` callers |
 | F3 | Low | Open | Duplicated AI-variant reassignment SQL in `reassignProgramTargets` / `mergeDuplicateTargets` — DRY candidate, not a correctness bug |
 | F4 | Low | Open | TUI polling is simulated; search is a placeholder (`docs/TUI_ARCHITECTURE.md`) |
@@ -150,7 +150,18 @@ Review of `main` against this playbook, with high/medium items fixed in the acco
 | F7 | Low | Accepted | `config migrate` leaves plaintext YAML; documented above |
 | F8 | Low | Accepted | Two-program platforms: a single genuine removal is allowed (`activeCount < 3` skips the 50% ratio; full wipe still aborted) |
 
-### Fixed in this review
+### Fixed since the 2026-08-30 review
+
+| Issue | Severity | Notes |
+|-------|----------|-------|
+| Canonical target identity was not enforced in Postgres | Medium | F1. Two raw spellings of one target could both be stored. Schema v3 merges leftovers and adds the identity unique key. |
+| Daemon dropped a platform forever after a partial poller build | Medium | Keep the pollers that authenticated and retry the build on the next tick. |
+| `db diff` / `db import` accepted unknown `--format` values | Low | Shared `normalizeDataFormat`. |
+| Import and upsert stored platform aliases as distinct owners | Medium | Known platforms are stored with `CanonicalName`. Ignore, active-count, and sync match aliases. |
+| Webhook DNS could hide a metadata address | Medium | Slack, Discord, and custom webhooks resolve every address and check again at dial time. |
+| Bugcrowd pagination stopped early on an empty `briefUrl` | Medium | Row count and de-duplicated paths are tracked separately. |
+
+### Fixed in the 2026-08-30 review
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
