@@ -207,24 +207,38 @@ func TestIntegration_MigrateDuplicateTargetSpellings(t *testing.T) {
 	`, loserID); err != nil {
 		t.Fatalf("insert variant on duplicate: %v", err)
 	}
+	// A lone non-canonical spelling must survive v3 unchanged. v2 is already
+	// recorded, so only v3 runs, and v3 must not rewrite target.
+	if _, err := scoped.Exec(`
+		INSERT INTO targets_raw(program_id, target, category, in_scope, is_bbp)
+		VALUES ($1, 'https://Only.Example/b', 'url', 1, 0)
+	`, programID); err != nil {
+		t.Fatalf("insert singleton spelling: %v", err)
+	}
 
 	if err := applyMigrations(scoped); err != nil {
 		t.Fatalf("apply v3: %v", err)
 	}
 
 	var n int
-	var identity, category string
+	if err := scoped.QueryRow(`SELECT COUNT(*) FROM targets_raw WHERE program_id = $1`, programID).Scan(&n); err != nil {
+		t.Fatalf("count migrated targets: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("migrated rows = %d, want 2", n)
+	}
+	var target, identity, category string
 	var variantTarget int64
 	if err := scoped.QueryRow(`
-		SELECT COUNT(*) OVER (), tr.target_identity, tr.category, v.target_id
+		SELECT tr.target, tr.target_identity, tr.category, v.target_id
 		FROM targets_raw tr
 		LEFT JOIN targets_ai_enhanced v ON v.target_id = tr.id
-		WHERE tr.program_id = $1
-	`, programID).Scan(&n, &identity, &category, &variantTarget); err != nil {
+		WHERE tr.id = $1
+	`, keeperID).Scan(&target, &identity, &category, &variantTarget); err != nil {
 		t.Fatalf("read migrated target: %v", err)
 	}
-	if n != 1 {
-		t.Fatalf("migrated rows = %d, want 1", n)
+	if target != "https://Example.com/a" {
+		t.Fatalf("target = %q, want the original keeper spelling", target)
 	}
 	if identity != "https://example.com/a" {
 		t.Fatalf("target_identity = %q, want https://example.com/a", identity)
@@ -234,6 +248,16 @@ func TestIntegration_MigrateDuplicateTargetSpellings(t *testing.T) {
 	}
 	if variantTarget != keeperID {
 		t.Fatalf("variant target_id = %d, want keeper %d", variantTarget, keeperID)
+	}
+	var singleTarget, singleIdentity string
+	if err := scoped.QueryRow(`
+		SELECT target, target_identity FROM targets_raw
+		WHERE program_id = $1 AND target = 'https://Only.Example/b'
+	`, programID).Scan(&singleTarget, &singleIdentity); err != nil {
+		t.Fatalf("read singleton spelling: %v", err)
+	}
+	if singleTarget != "https://Only.Example/b" || singleIdentity != "https://only.example/b" {
+		t.Fatalf("singleton target=%q identity=%q", singleTarget, singleIdentity)
 	}
 
 	_, err = scoped.Exec(`
