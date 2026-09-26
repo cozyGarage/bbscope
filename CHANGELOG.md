@@ -48,6 +48,7 @@ higher-level, human-curated changes.
 
 ### Fixed
 - Schema v3 merges duplicate target spellings without rewriting `targets_raw.target`. The stored spelling stays; `target_identity` holds the canonical value.
+- `RemoveCustomTarget` deletes by canonical identity, so a different spelling or category alias removes the stored row.
 - Two raw spellings of one target (`https://Example.com/a` and `https://example.com:443/a/`) can no longer both be stored.
 - Bugcrowd pagination counts rows with an empty `briefUrl` separately from de-duplicated paths.
 - `db get domains` no longer emits IP addresses or CIDR/IP ranges as domains.
