@@ -289,7 +289,20 @@ func reassignProgramTargets(tx *sql.Tx, fromProgramID, toProgramID int64) error 
 	return nil
 }
 
+// mergeDuplicateTargets collapses targets that share an identity and rewrites
+// the keeper to the canonical target and category. Schema v2 uses this.
 func mergeDuplicateTargets(tx *sql.Tx) error {
+	return collapseDuplicateTargets(tx, true)
+}
+
+// collapseDuplicateTargetsKeepRaw deletes identity duplicates and leaves the
+// keeper's target string unchanged. Schema v3 uses this so an upgrade does not
+// replace a stored spelling such as https://Example.com/a.
+func collapseDuplicateTargetsKeepRaw(tx *sql.Tx) error {
+	return collapseDuplicateTargets(tx, false)
+}
+
+func collapseDuplicateTargets(tx *sql.Tx, rewriteKeeper bool) error {
 	rows, err := tx.Query(`
 		SELECT id, program_id, target, category
 		FROM targets_raw
@@ -342,11 +355,13 @@ func mergeDuplicateTargets(tx *sql.Tx) error {
 				return err
 			}
 		}
-		if canonicalTarget != keeper.target || canonicalCat != keeper.cat {
+		// v2 rewrites the keeper. A unique conflict is left as-is so that migration
+		// still finishes. v3 must not rewrite target; the backfill sets category
+		// and target_identity without touching the stored spelling.
+		if rewriteKeeper && (canonicalTarget != keeper.target || canonicalCat != keeper.cat) {
 			if _, err := tx.Exec(`
 				UPDATE targets_raw SET target = $1, category = $2 WHERE id = $3
 			`, canonicalTarget, canonicalCat, keeper.id); err != nil {
-				// Unique conflict: leave as-is rather than failing the whole migration.
 				_ = err
 			}
 		}
@@ -355,11 +370,14 @@ func mergeDuplicateTargets(tx *sql.Tx) error {
 }
 
 // addCanonicalTargetIdentity stores NormalizeTarget(target) and enforces it.
-// The raw target column keeps its spelling for display and export. category is
-// rewritten with the same NormalizeCategory identityKey uses, so the unique
-// key matches the in-memory identity. A leftover collision fails the migration.
+// Duplicate identities are collapsed first. The keeper's target string is left
+// as stored. category is rewritten with NormalizeCategory so the unique key
+// matches identityKey. A leftover collision fails the migration.
 func addCanonicalTargetIdentity(tx *sql.Tx) error {
-	if err := canonicalizeProgramURLsAndTargets(tx); err != nil {
+	if err := mergeDuplicatePrograms(tx); err != nil {
+		return err
+	}
+	if err := collapseDuplicateTargetsKeepRaw(tx); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`ALTER TABLE targets_raw ADD COLUMN target_identity TEXT`); err != nil {

@@ -154,7 +154,7 @@ Review of `main` against this playbook. High and medium items through the Septem
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
-| Canonical target identity was not enforced in Postgres | Medium | F1. Two raw spellings of one target could both be stored. Schema v3 merges leftovers and adds the identity unique key. |
+| Canonical target identity was not enforced in Postgres | Medium | F1. Two raw spellings of one target could both be stored. Schema v3 merges leftovers without rewriting `target`, then adds the identity unique key. |
 | Daemon dropped a platform forever after a partial poller build | Medium | Keep the pollers that authenticated and retry the build on the next tick. |
 | `db diff` / `db import` accepted unknown `--format` values | Low | Shared `normalizeDataFormat`. |
 | Import and upsert stored platform aliases as distinct owners | Medium | Known platforms are stored with `CanonicalName`. Ignore, active-count, and sync match aliases. |
