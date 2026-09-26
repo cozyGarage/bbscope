@@ -3,19 +3,25 @@ package storage
 import (
 	"context"
 	"fmt"
+
+	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
 
 // RemoveCustomTarget removes a custom target from the database.
+// Match the stored identity, not the raw spelling, so https://Example.com/a
+// and https://example.com:443/a/ delete the same row.
 func (d *DB) RemoveCustomTarget(ctx context.Context, target, category, programURL string) error {
 	programURL = NormalizeProgramURL(programURL)
+	category = scope.NormalizeCategory(category)
+	identity := NormalizeTarget(target)
 	query := `
 		DELETE FROM targets_raw
-		WHERE target = $1 AND category = $2 AND program_id IN (
+		WHERE target_identity = $1 AND category = $2 AND program_id IN (
 			SELECT id FROM programs
 			WHERE url = $3 OR url = $3 || '/' OR rtrim(url, '/') = rtrim($3, '/')
 		)
 	`
-	res, err := d.sql.ExecContext(ctx, query, target, category, programURL)
+	res, err := d.sql.ExecContext(ctx, query, identity, category, programURL)
 	if err != nil {
 		return err
 	}

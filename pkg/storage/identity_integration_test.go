@@ -129,6 +129,20 @@ func TestIntegration_AddCustomTargetCollapsesSpellings(t *testing.T) {
 	if n != 1 || target != "https://Example.com/a" || identity != "https://example.com/a" {
 		t.Fatalf("stored custom target n=%d target=%q identity=%q", n, target, identity)
 	}
+
+	if err := db.RemoveCustomTarget(ctx, "https://example.com:443/a/", "website", progURL+"/"); err != nil {
+		t.Fatalf("RemoveCustomTarget by alternate spelling: %v", err)
+	}
+	if err := db.sql.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM targets_raw tr
+		JOIN programs p ON p.id = tr.program_id
+		WHERE p.url = $1
+	`, progURL).Scan(&n); err != nil {
+		t.Fatalf("count after remove: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("rows after remove = %d, want 0", n)
+	}
 }
 
 func TestIntegration_MigrateDuplicateTargetSpellings(t *testing.T) {

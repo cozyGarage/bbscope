@@ -58,7 +58,7 @@ Route review by path, not GitHub handles:
 - [ ] Empty incoming scope against existing targets returns `ErrAbortingScopeWipe`.
 - [ ] `SyncPlatformPrograms` soft-disables; it does not delete targets.
 - [ ] Partial listings cannot disable half or more of a platform (`shouldAbortPartialSync`; full wipe always aborted).
-- [ ] Identity uses `NormalizeTarget` + `NormalizeCategory`, enforced by `UNIQUE (program_id, category, target_identity)`. `target` keeps the original spelling. Duplicate keys in one payload are dropped with a warning, first entry wins.
+- [ ] Identity uses `NormalizeTarget` + `NormalizeCategory`, enforced by `UNIQUE (program_id, category, target_identity)`. `target` keeps the original spelling. Adds, upserts, and removes match that identity. Duplicate keys in one payload are dropped with a warning, first entry wins.
 - [ ] User-controlled `LIKE` patterns are escaped (`%`, `_`, `\`).
 - [ ] `--platform` filters accept both short names (`h1`) and long names (`hackerone`) via `platforms.MatchingNames`.
 
