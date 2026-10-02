@@ -314,3 +314,37 @@ func TestIntegrationDatabaseIsConfiguredInCI(t *testing.T) {
 			"Check the postgres service and TEST_DB_URL in .github/workflows/ci.yml.")
 	}
 }
+
+// Legacy rows under different platform spellings (h1 vs hackerone) can share
+// one canonical URL. The rewrite's unique violation used to be ignored inside
+// the migration transaction, which Postgres then refused to continue, so Open
+// failed on every startup.
+func TestIntegration_MergeDuplicateProgramsSurvivesURLConflict(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	platform := uniquePlatform(t)
+	url := "https://example.com/" + platform
+	t.Cleanup(func() {
+		_, _ = db.sql.ExecContext(ctx, `DELETE FROM programs WHERE platform IN ($1, $2)`, platform+"_a", platform+"_b")
+	})
+	if _, err := db.sql.ExecContext(ctx, `INSERT INTO programs(platform, handle, url) VALUES ($1, 'x', $2), ($3, 'x', $4)`,
+		platform+"_a", url, platform+"_b", url+"/"); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := mergeDuplicatePrograms(tx); err != nil {
+		t.Fatalf("mergeDuplicatePrograms: %v", err)
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM programs WHERE platform IN ($1, $2)`, platform+"_a", platform+"_b").Scan(&n); err != nil {
+		t.Fatalf("transaction unusable after the skipped rewrite: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("programs = %d, want 2 (conflicting rewrite skipped, not merged)", n)
+	}
+}

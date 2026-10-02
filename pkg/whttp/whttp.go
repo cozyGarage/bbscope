@@ -1,6 +1,7 @@
 package whttp
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -29,6 +30,8 @@ type WHTTPReq struct {
 	CustomHost string
 	Headers    []WHTTPHeader
 	Debug      bool
+	// Ctx cancels the request and its retry backoff; nil means Background.
+	Ctx context.Context
 }
 
 type WHTTPRes struct {
@@ -125,11 +128,15 @@ func SendHTTPRequest(wReq *WHTTPReq, customClient *retryablehttp.Client) (wRes *
 		client = GetDefaultClient()
 	}
 
+	ctx := wReq.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var req *retryablehttp.Request
 	if wReq.Body != "" {
-		req, err = retryablehttp.NewRequest(wReq.Method, wReq.URL, strings.NewReader(wReq.Body))
+		req, err = retryablehttp.NewRequestWithContext(ctx, wReq.Method, wReq.URL, strings.NewReader(wReq.Body))
 	} else {
-		req, err = retryablehttp.NewRequest(wReq.Method, wReq.URL, nil)
+		req, err = retryablehttp.NewRequestWithContext(ctx, wReq.Method, wReq.URL, nil)
 	}
 
 	if err != nil {

@@ -41,16 +41,25 @@ var pollCmd = &cobra.Command{
 		proxyURL, _ := cmd.Flags().GetString("proxy")
 		// Parent poll includes all configured platforms (including Immunefi).
 		pollers, err := buildPollersFromConfig(cmd.Context(), proxyURL, nil)
-		if err != nil {
-			return err
-		}
-		if len(pollers) == 0 {
-			cmd.SilenceUsage = true
-			return fmt.Errorf("no platforms to poll; configure credentials or use a platform subcommand")
-		}
-
-		return runPollWithPollers(cmd, pollers)
+		return pollAvailable(cmd, pollers, err)
 	},
+}
+
+// pollAvailable polls every poller that was built even when others failed to
+// authenticate, so one banned or expired login cannot skip the remaining
+// platforms. The build error is still returned to keep the exit code non-zero.
+func pollAvailable(cmd *cobra.Command, pollers []platforms.PlatformPoller, buildErr error) error {
+	if len(pollers) == 0 {
+		if buildErr != nil {
+			return buildErr
+		}
+		cmd.SilenceUsage = true
+		return fmt.Errorf("no platforms to poll; configure credentials or use a platform subcommand")
+	}
+	if buildErr != nil {
+		utils.Log.Warnf("Polling the platforms that authenticated; others failed: %v", buildErr)
+	}
+	return errors.Join(buildErr, runPollWithPollers(cmd, pollers))
 }
 
 func init() {
@@ -235,7 +244,9 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 			continue
 		}
 
-		if useDB {
+		if useDB && pollIsFiltered(opts) {
+			utils.Log.Infof("Scope filters are active; skipping removal sync for %s so filtered-out scope is kept", p.Name())
+		} else if useDB {
 			// After processing all programs for a platform, sync the state.
 			// This will mark any programs that were not in the latest poll as disabled.
 			removedProgramChanges, err := db.SyncPlatformPrograms(ctx, p.Name(), polledProgramURLs)
@@ -259,6 +270,14 @@ func runPollWithPollers(cmd *cobra.Command, pollers []platforms.PlatformPoller) 
 		}
 	}
 	return errors.Join(runErrs...)
+}
+
+// pollIsFiltered reports whether the poll returns a filtered subset of the
+// platform's scope. A subset must be merged, never reconciled: treating it as
+// the full scope deletes every filtered-out target and disables every
+// filtered-out program.
+func pollIsFiltered(opts platforms.PollOptions) bool {
+	return opts.BountyOnly || opts.PrivateOnly || scope.GetAllStringsForCategories(opts.Categories) != nil
 }
 
 // emptyListingWouldWipe reports whether syncing an empty handle list would
@@ -346,51 +365,52 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 				var aiCandidates []storage.TargetItem
 				var aiEnhancements map[string][]storage.TargetVariant
 
-				if aiNormalizer != nil && len(allItems) > 0 {
+				// Always reattach stored AI variants, not only under --ai: the
+				// upsert treats an entry without variants as "none desired" and
+				// would delete every stored variant on a plain --db poll.
+				if len(allItems) > 0 {
 					var err error
 					aiEnhancements, err = db.ListAIEnhancements(ctx, pd.Url)
 					if err != nil {
-						utils.Log.Warnf("Failed to load AI enhancements for %s: %v", pd.Url, err)
-						aiEnhancements = nil
+						utils.Log.Warnf("Failed to load AI enhancements for %s: %v; skipping program to keep stored variants", pd.Url, err)
+						errorMu.Lock()
+						if firstError == nil {
+							firstError = err
+						}
+						errorMu.Unlock()
+						continue
 					}
 				}
 
-				if aiNormalizer != nil && len(allItems) > 0 {
-					aiCandidates = make([]storage.TargetItem, 0, len(allItems))
-					for _, item := range allItems {
-						key := storage.BuildTargetCategoryKey(item.URI, item.Category)
-						if variants, ok := aiEnhancements[key]; ok && len(variants) > 0 {
-							clone := item
-							clone.Variants = append([]storage.TargetVariant(nil), variants...)
-							processedItems = append(processedItems, clone)
-							continue
-						}
-						aiCandidates = append(aiCandidates, item)
+				for _, item := range allItems {
+					key := storage.BuildTargetCategoryKey(item.URI, item.Category)
+					if variants := aiEnhancements[key]; len(variants) > 0 {
+						clone := item
+						clone.Variants = append([]storage.TargetVariant(nil), variants...)
+						processedItems = append(processedItems, clone)
+						continue
 					}
+					if aiNormalizer == nil {
+						processedItems = append(processedItems, item)
+						continue
+					}
+					aiCandidates = append(aiCandidates, item)
+				}
 
-					if len(aiCandidates) > 0 {
-						normalized, err := aiNormalizer.NormalizeTargets(ctx, ai.ProgramInfo{
-							ProgramURL: pd.Url,
-							Platform:   p.Name(),
-							Handle:     h,
-						}, aiCandidates)
-						if err != nil {
-							utils.Log.Warnf("AI normalization failed for %s: %v", pd.Url, err)
-							processedItems = append(processedItems, aiCandidates...)
-						} else if len(normalized) > 0 {
-							processedItems = append(processedItems, normalized...)
-						} else {
-							processedItems = append(processedItems, aiCandidates...)
-						}
+				if len(aiCandidates) > 0 {
+					normalized, err := aiNormalizer.NormalizeTargets(ctx, ai.ProgramInfo{
+						ProgramURL: pd.Url,
+						Platform:   p.Name(),
+						Handle:     h,
+					}, aiCandidates)
+					if err != nil {
+						utils.Log.Warnf("AI normalization failed for %s: %v", pd.Url, err)
+						processedItems = append(processedItems, aiCandidates...)
+					} else if len(normalized) > 0 {
+						processedItems = append(processedItems, normalized...)
+					} else {
+						processedItems = append(processedItems, aiCandidates...)
 					}
-
-					// if there were no candidates but also no pre-existing enhancements,
-					// ensure raw items still get processed
-					if len(processedItems) == 0 {
-						processedItems = append(processedItems, allItems...)
-					}
-				} else if len(processedItems) == 0 {
-					processedItems = append(processedItems, allItems...)
 				}
 
 				entries, err := storage.BuildEntries(pd.Url, p.Name(), h, processedItems)
@@ -412,13 +432,19 @@ func processProgramsConcurrently(ctx context.Context, cmd *cobra.Command, p plat
 					p.Name(),
 					h,
 					entries,
-					storage.UpsertOptions{SkipChangeLog: isFirstRunForPlatform},
+					storage.UpsertOptions{SkipChangeLog: isFirstRunForPlatform, MergeOnly: pollIsFiltered(opts)},
 				)
 
 				if err != nil {
 					if errors.Is(err, storage.ErrAbortingScopeWipe) {
 						utils.Log.Warnf("Potential scope wipe detected for program %s. Skipping update. This might be due to a broken poller or a platform API change.", pd.Url)
 						continue // Don't treat this as a fatal error for the whole poll
+					}
+					if errors.Is(err, storage.ErrProgramURLOwned) {
+						// e.g. `db add -u` stored this URL as a custom program. Failing the
+						// platform here would skip its sync on every future run.
+						utils.Log.Warnf("Skipping program %s: %v", pd.Url, err)
+						continue
 					}
 					// For other errors, log but continue processing
 					utils.Log.Warnf("Database error for program %s: %v", pd.Url, err)

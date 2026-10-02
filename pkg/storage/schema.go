@@ -2,7 +2,10 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/cozyGarage/bbscope/v2/pkg/scope"
 )
@@ -152,6 +155,27 @@ func applyMigrations(db *sql.DB) error {
 	return nil
 }
 
+// execSkippingConflict runs an optional rewrite inside a savepoint. In Postgres
+// any failed statement aborts the whole transaction, so ignoring the error
+// directly made every later migration statement fail and Open fail forever.
+// Unique violations are skipped; any other error is returned.
+func execSkippingConflict(tx *sql.Tx, query string, args ...any) error {
+	if _, err := tx.Exec(`SAVEPOINT optional_rewrite`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(query, args...); err != nil {
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23505" { // unique_violation
+			return err
+		}
+		if _, err := tx.Exec(`ROLLBACK TO SAVEPOINT optional_rewrite`); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`RELEASE SAVEPOINT optional_rewrite`)
+	return err
+}
+
 // canonicalizeProgramURLsAndTargets merges legacy duplicate programs/targets that
 // only differ by URL/target canonicalization (trailing slash, host case, etc.).
 func canonicalizeProgramURLsAndTargets(tx *sql.Tx) error {
@@ -194,9 +218,9 @@ func mergeDuplicatePrograms(tx *sql.Tx) error {
 			// Still rewrite single rows to canonical URL when needed.
 			canonical := NormalizeProgramURL(group[0].url)
 			if canonical != "" && canonical != group[0].url {
-				if _, err := tx.Exec(`UPDATE programs SET url = $1 WHERE id = $2`, canonical, group[0].id); err != nil {
-					// Unique conflict means another row already owns it; ignore rewrite.
-					_ = err
+				// A unique conflict means another row already owns the URL; skip the rewrite.
+				if err := execSkippingConflict(tx, `UPDATE programs SET url = $1 WHERE id = $2`, canonical, group[0].id); err != nil {
+					return err
 				}
 			}
 			continue
@@ -359,10 +383,10 @@ func collapseDuplicateTargets(tx *sql.Tx, rewriteKeeper bool) error {
 		// still finishes. v3 must not rewrite target; the backfill sets category
 		// and target_identity without touching the stored spelling.
 		if rewriteKeeper && (canonicalTarget != keeper.target || canonicalCat != keeper.cat) {
-			if _, err := tx.Exec(`
+			if err := execSkippingConflict(tx, `
 				UPDATE targets_raw SET target = $1, category = $2 WHERE id = $3
 			`, canonicalTarget, canonicalCat, keeper.id); err != nil {
-				_ = err
+				return err
 			}
 		}
 	}

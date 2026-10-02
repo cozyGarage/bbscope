@@ -35,7 +35,7 @@ func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) err
 		return nil
 	}
 	if cfg.Email != "" && cfg.Password != "" && cfg.OtpSecret != "" {
-		tok, err := login(cfg.Email, cfg.Password, cfg.OtpSecret, cfg.Proxy)
+		tok, err := login(ctx, cfg.Email, cfg.Password, cfg.OtpSecret, cfg.Proxy)
 		if err != nil {
 			return err
 		}
@@ -52,6 +52,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 
 	for page <= nb_pages {
 		res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
+			Ctx:     ctx,
 			Method:  "GET",
 			URL:     apiBaseURL + "/programs" + "?page=" + strconv.Itoa(page),
 			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
@@ -66,8 +67,15 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 		if !gjson.Get(res.BodyString, "items").Exists() {
 			return nil, fmt.Errorf("yeswehack: listing response missing items")
 		}
-		if page == 1 && !gjson.Get(res.BodyString, "pagination.nb_pages").Exists() {
-			return nil, fmt.Errorf("yeswehack: listing response missing pagination.nb_pages")
+		// The page count comes from page 1 only: a later page without
+		// pagination would read as 0 and end the listing early, and a short
+		// listing lets sync disable the programs it missed.
+		if page == 1 {
+			pagesField := gjson.Get(res.BodyString, "pagination.nb_pages")
+			if !pagesField.Exists() {
+				return nil, fmt.Errorf("yeswehack: listing response missing pagination.nb_pages")
+			}
+			nb_pages = int(pagesField.Int())
 		}
 
 		// Read each item as an object rather than zipping parallel `items.#.field`
@@ -91,7 +99,6 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			handles = append(handles, slug)
 		}
 
-		nb_pages = int(gjson.Get(res.BodyString, "pagination.nb_pages").Int())
 		page++
 	}
 
@@ -105,6 +112,7 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 	pData := scope.ProgramData{Url: programWebURL}
 
 	res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
+		Ctx:     ctx,
 		Method:  "GET",
 		URL:     programAPIURL,
 		Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
@@ -174,7 +182,7 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 	return pData, nil
 }
 
-func login(email string, password, otpSecret, proxy string) (string, error) {
+func login(ctx context.Context, email string, password, otpSecret, proxy string) (string, error) {
 	if proxy != "" {
 		if err := whttp.SetupProxy(proxy); err != nil {
 			return "", fmt.Errorf("failed to setup proxy: %w", err)
@@ -188,6 +196,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 	}
 
 	loginRes, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
+		Ctx:    ctx,
 		Method: "POST",
 		URL:    loginURL,
 		Headers: []whttp.WHTTPHeader{
@@ -231,6 +240,7 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 		}
 
 		totpRes, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
+			Ctx:    ctx,
 			Method: "POST",
 			URL:    totpURL,
 			Headers: []whttp.WHTTPHeader{
@@ -254,9 +264,13 @@ func login(email string, password, otpSecret, proxy string) (string, error) {
 			return finalToken, nil
 		}
 
-		time.Sleep(2 * time.Second)
 		if attempts == OTP_ATTEMPTS {
 			return "", fmt.Errorf("TOTP verification failed after %d attempts", OTP_ATTEMPTS)
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
 		}
 	}
 

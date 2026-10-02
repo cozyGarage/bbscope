@@ -3,17 +3,26 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/zalando/go-keyring"
 )
+
+// TestMain swaps in the in-memory keyring so tests never read a developer's
+// real credentials or block on a desktop Secret Service unlock prompt.
+func TestMain(m *testing.M) {
+	keyring.MockInit()
+	os.Exit(m.Run())
+}
 
 // runPollSubcommand invokes one poll subcommand's RunE directly with no
 // credentials available. Going through Execute would traverse up to the root
 // command and print its help instead of running this subcommand. Credentials
-// resolve through viper here because the test environment has no OS keychain.
+// resolve through viper here because TestMain mocks the OS keychain empty.
 func runPollSubcommand(t *testing.T, cmd *cobra.Command) error {
 	t.Helper()
 	viper.Reset()

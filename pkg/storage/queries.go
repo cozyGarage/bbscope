@@ -238,6 +238,8 @@ func (d *DB) ListEntries(ctx context.Context, opts ListOptions) ([]Entry, error)
 
 		if aiIDNS.Valid {
 			entry.Source = "ai"
+			base := baseInScope == 1
+			entry.BaseInScope = &base
 			if aiTargetNS.Valid && aiTargetNS.String != "" {
 				entry.TargetNormalized = aiTargetNS.String
 			} else {

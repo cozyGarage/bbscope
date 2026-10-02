@@ -58,6 +58,7 @@ func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOpti
 			return nil, err
 		}
 		res, err := whttp.SendHTTPRequest(&whttp.WHTTPReq{
+			Ctx:     ctx,
 			Method:  "GET",
 			URL:     fmt.Sprintf(apiBaseURL+"/programs?statusId=3&limit=%d&offset=%d", limit, offset),
 			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},
@@ -158,6 +159,7 @@ func (p *Poller) FetchProgramScope(ctx context.Context, handle string, opts plat
 	for attempt := 1; ; attempt++ {
 		var err error
 		res, err = whttp.SendHTTPRequest(&whttp.WHTTPReq{
+			Ctx:     ctx,
 			Method:  "GET",
 			URL:     apiBaseURL + "/programs/" + url.PathEscape(id),
 			Headers: []whttp.WHTTPHeader{{Name: "Authorization", Value: "Bearer " + p.token}},

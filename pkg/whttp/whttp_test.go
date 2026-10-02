@@ -1,6 +1,8 @@
 package whttp
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -260,5 +262,27 @@ func TestWHTTPReq_DefaultMethod(t *testing.T) {
 	_, err := SendHTTPRequest(req, nil)
 	if err != nil {
 		t.Fatalf("SendHTTPRequest() error = %v", err)
+	}
+}
+
+// Without a request context, Ctrl-C or daemon shutdown could not interrupt a
+// request stuck in retry backoff.
+func TestSendHTTPRequest_HonorsContext(t *testing.T) {
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-block
+	}))
+	defer srv.Close()
+	defer close(block)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := SendHTTPRequest(&WHTTPReq{Ctx: ctx, Method: "GET", URL: srv.URL}, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("request ignored cancellation for %s", elapsed)
 	}
 }

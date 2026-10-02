@@ -131,6 +131,7 @@ func exportCSV(entries []storage.Entry) error {
 		"base_category",
 		"disabled",
 		"is_ignored",
+		"base_in_scope",
 	}
 	if err := writer.Write(header); err != nil {
 		return err
@@ -153,6 +154,10 @@ func exportCSV(entries []storage.Entry) error {
 			e.BaseCategory,
 			fmt.Sprintf("%t", e.Disabled),
 			fmt.Sprintf("%t", e.IsIgnored),
+			"",
+		}
+		if e.BaseInScope != nil {
+			record[len(record)-1] = fmt.Sprintf("%t", *e.BaseInScope)
 		}
 		if err := writer.Write(record); err != nil {
 			return err

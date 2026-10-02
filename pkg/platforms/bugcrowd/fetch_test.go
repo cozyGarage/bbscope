@@ -200,7 +200,7 @@ func TestGetProgramHandles_SkipsEmptyBriefURL(t *testing.T) {
 	defer srv.Close()
 	withBaseURL(t, srv.URL)
 
-	got, err := GetProgramHandles("tok", "bug_bounty", false)
+	got, err := GetProgramHandles(context.Background(), "tok", "bug_bounty", false)
 	if err != nil {
 		t.Fatalf("GetProgramHandles: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestGetProgramHandles_CountsEveryEmptyBriefURLRow(t *testing.T) {
 	defer srv.Close()
 	withBaseURL(t, srv.URL)
 
-	got, err := GetProgramHandles("tok", "bug_bounty", false)
+	got, err := GetProgramHandles(context.Background(), "tok", "bug_bounty", false)
 	if err != nil {
 		t.Fatalf("GetProgramHandles: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestGetProgramHandles_WAFBanned(t *testing.T) {
 	defer srv.Close()
 	withBaseURL(t, srv.URL)
 
-	_, err := GetProgramHandles("tok", "bug_bounty", false)
+	_, err := GetProgramHandles(context.Background(), "tok", "bug_bounty", false)
 	if err == nil || !strings.Contains(err.Error(), "WAF banned") {
 		t.Fatalf("expected WAF banned error, got %v", err)
 	}
@@ -267,7 +267,7 @@ func TestGetProgramHandles_MissingTotalCountKeepsPaging(t *testing.T) {
 	defer srv.Close()
 	withBaseURL(t, srv.URL)
 
-	got, err := GetProgramHandles("tok", "bug_bounty", false)
+	got, err := GetProgramHandles(context.Background(), "tok", "bug_bounty", false)
 	if err != nil {
 		t.Fatalf("GetProgramHandles: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestGetProgramHandles_Non2xxAndHTML(t *testing.T) {
 	defer srv.Close()
 	withBaseURL(t, srv.URL)
 
-	_, err := GetProgramHandles("tok", "bug_bounty", false)
+	_, err := GetProgramHandles(context.Background(), "tok", "bug_bounty", false)
 	if err == nil {
 		t.Fatal("expected an error for a non-2xx listing page, not an empty list")
 	}
@@ -297,7 +297,7 @@ func TestGetProgramHandles_HTML200(t *testing.T) {
 	defer srv.Close()
 	withBaseURL(t, srv.URL)
 
-	_, err := GetProgramHandles("tok", "bug_bounty", false)
+	_, err := GetProgramHandles(context.Background(), "tok", "bug_bounty", false)
 	if err == nil {
 		t.Fatal("expected an error when the listing body has no engagements array")
 	}
@@ -326,7 +326,7 @@ func TestExtractScopeFromTargetTable_RejectsOffOrigin(t *testing.T) {
 	apiBaseURL = "https://bugcrowd.com"
 	t.Cleanup(func() { apiBaseURL = orig })
 
-	err := extractScopeFromTargetTable("https://evil.example/targets.json", "all", "tok", &scope.ProgramData{}, true)
+	err := extractScopeFromTargetTable(context.Background(), "https://evil.example/targets.json", "all", "tok", &scope.ProgramData{}, true)
 	if err == nil {
 		t.Fatal("expected off-origin targets_url to be rejected")
 	}

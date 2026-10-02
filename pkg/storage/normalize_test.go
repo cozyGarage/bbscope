@@ -12,6 +12,8 @@ func TestNormalizeTarget(t *testing.T) {
 		{"https://*.example.com/api", "https://*.example.com/api"},
 		{"*.Example.COM.", "*.example.com"},
 		{"Example.COM/", "example.com"},
+		{"example.com./", "example.com"},
+		{"//example.com:443/a", "https://example.com/a"},
 		{"", ""},
 	}
 	for _, tc := range tests {
