@@ -22,7 +22,7 @@ func withTestTransport(t *testing.T, url string) {
 	origSleep := sleepFunc
 	PLATFORM_URL = url
 	maxRetries = 2
-	sleepFunc = func(time.Duration) {}
+	sleepFunc = func(context.Context, time.Duration) error { return nil }
 	t.Cleanup(func() {
 		PLATFORM_URL = origURL
 		maxRetries = origRetries
@@ -157,6 +157,24 @@ func TestFetchWithRetry_RateLimitThenOK(t *testing.T) {
 	}
 	if hits != 2 {
 		t.Fatalf("expected 2 hits, got %d", hits)
+	}
+}
+
+// A delisted program's 404 used to be retried maxRetries times with no pause.
+func TestFetchWithRetry_ClientErrorFailsFast(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	withTestTransport(t, srv.URL)
+
+	if _, err := fetchWithRetry(context.Background(), srv.URL+"/"); err == nil {
+		t.Fatal("expected a 404 to fail")
+	}
+	if hits != 1 {
+		t.Fatalf("404 was requested %d times, want 1", hits)
 	}
 }
 

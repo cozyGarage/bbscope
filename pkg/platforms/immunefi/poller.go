@@ -15,9 +15,21 @@ import (
 )
 
 // maxRetries and sleepFunc are package variables so httptest tests can avoid
-// long exponential backoff against a local server.
-var maxRetries = 20
-var sleepFunc = time.Sleep
+// long exponential backoff against a local server. whttp's client already
+// retries 429/5xx/network errors 10 times per call (honoring Retry-After), so
+// this outer loop only covers a few longer outages; 20 here meant up to ~220
+// requests for one URL.
+var maxRetries = 3
+var sleepFunc = func(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
 
 type Poller struct{}
 
@@ -26,8 +38,9 @@ func (p *Poller) Name() string { return "immunefi" }
 // Authenticate is a no-op for Immunefi (no auth required)
 func (p *Poller) Authenticate(ctx context.Context, cfg platforms.AuthConfig) error { return nil }
 
-// fetchWithRetry sends an HTTP request with retry logic for 429 rate limits.
-// It will retry up to maxRetries times with exponential backoff.
+// fetchWithRetry sends an HTTP request, retrying network errors, 429 rate
+// limits, and 5xx responses up to maxRetries times with backoff. Other 4xx
+// responses fail immediately: a delisted program's 404 never recovers.
 func fetchWithRetry(ctx context.Context, url string) (*whttp.WHTTPRes, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -36,6 +49,7 @@ func fetchWithRetry(ctx context.Context, url string) (*whttp.WHTTPRes, error) {
 		}
 		res, err := whttp.SendHTTPRequest(
 			&whttp.WHTTPReq{
+				Ctx:    ctx,
 				Method: "GET",
 				URL:    url,
 				Headers: []whttp.WHTTPHeader{
@@ -44,36 +58,26 @@ func fetchWithRetry(ctx context.Context, url string) (*whttp.WHTTPRes, error) {
 				},
 			}, nil)
 
-		if err != nil {
+		backoff := time.Duration(attempt+1) * time.Second
+		switch {
+		case err != nil:
 			lastErr = err
-			// Network error, retry with backoff
-			sleepFunc(time.Duration(attempt+1) * time.Second)
-			continue
-		}
-
-		if res.StatusCode == 429 {
-			// Rate limited, wait with exponential backoff and retry
-			backoff := time.Duration(attempt+1) * 2 * time.Second
-			if backoff > 30*time.Second {
-				backoff = 30 * time.Second
-			}
-			sleepFunc(backoff)
-			continue
-		}
-
-		if res.StatusCode >= 200 && res.StatusCode < 300 {
+		case res.StatusCode >= 200 && res.StatusCode < 300:
 			return res, nil
+		case res.StatusCode == 429:
+			lastErr = fmt.Errorf("HTTP 429 for %s", url)
+			backoff = min(2*backoff, 30*time.Second)
+		case res.StatusCode >= 500:
+			// Immunefi occasionally serves transient 5xx during RSC navigations.
+			lastErr = fmt.Errorf("HTTP %d for %s", res.StatusCode, url)
+		default:
+			return nil, fmt.Errorf("HTTP %d for %s", res.StatusCode, url)
 		}
-
-		// Other error status — keep retrying (Immunefi occasionally serves
-		// transient non-2xx responses during RSC navigations).
-		lastErr = fmt.Errorf("HTTP %d for %s", res.StatusCode, url)
+		if err := sleepFunc(ctx, backoff); err != nil {
+			return nil, err
+		}
 	}
-
-	if lastErr != nil {
-		return nil, fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
-	}
-	return nil, fmt.Errorf("failed after %d retries", maxRetries)
+	return nil, fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
 }
 
 func (p *Poller) ListProgramHandles(ctx context.Context, opts platforms.PollOptions) ([]string, error) {

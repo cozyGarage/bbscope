@@ -2,6 +2,7 @@ package yeswehack
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cozyGarage/bbscope/v2/pkg/platforms"
 )
@@ -253,5 +255,55 @@ func TestFetchProgramScopeEscapesHandle(t *testing.T) {
 	_, _ = NewPoller("tok").FetchProgramScope(context.Background(), "acme?x", platforms.PollOptions{})
 	if !strings.Contains(gotPath, "acme%3Fx") {
 		t.Fatalf("path = %q, want PathEscape of handle", gotPath)
+	}
+}
+
+// A later page without pagination read as nb_pages=0 and silently ended the
+// listing, returning a partial program list as success.
+func TestListProgramHandles_LaterPageWithoutPagination(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_, _ = io.WriteString(w, `{"items":[{"slug":"p1"}],"pagination":{"nb_pages":3}}`)
+		case "2":
+			_, _ = io.WriteString(w, `{"items":[{"slug":"p2"}]}`)
+		default:
+			_, _ = io.WriteString(w, `{"items":[{"slug":"p3"}]}`)
+		}
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	got, err := NewPoller("tok").ListProgramHandles(context.Background(), platforms.PollOptions{})
+	if err != nil {
+		t.Fatalf("ListProgramHandles: %v", err)
+	}
+	if want := []string{"p1", "p2", "p3"}; !equal(got, want) {
+		t.Fatalf("handles = %v, want %v", got, want)
+	}
+}
+
+// Login retried a rejected TOTP with plain time.Sleep, so cancellation waited
+// out every remaining attempt.
+func TestLogin_HonorsCancelBetweenTOTPAttempts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			_, _ = io.WriteString(w, `{"totp_token":"t"}`)
+			return
+		}
+		cancel() // shutdown arrives while TOTP is being rejected
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	withBaseURL(t, srv.URL)
+
+	start := time.Now()
+	_, err := login(ctx, "a@b.c", "pw", "JBSWY3DPEHPK3PXP", "")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("login ignored cancellation for %s", elapsed)
 	}
 }

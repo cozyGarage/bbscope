@@ -1,6 +1,7 @@
 package bugcrowd
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -71,19 +72,21 @@ func rateLimitedRequestWorker() {
 }
 
 // rateLimitedSendHTTPRequest is a wrapper for whttp.SendHTTPRequest that enforces the 1-req/sec rate limit.
-func rateLimitedSendHTTPRequest(req *whttp.WHTTPReq, client *retryablehttp.Client) (*whttp.WHTTPRes, error) {
+// ctx cancels both the wait for a rate-limit slot and the request itself.
+func rateLimitedSendHTTPRequest(ctx context.Context, req *whttp.WHTTPReq, client *retryablehttp.Client) (*whttp.WHTTPRes, error) {
+	req.Ctx = ctx
 	resultChan := make(chan rateLimitedResult, 1)
-	rateLimitRequestChan <- rateLimitedRequest{
-		req:        req,
-		client:     client,
-		resultChan: resultChan,
+	select {
+	case rateLimitRequestChan <- rateLimitedRequest{req: req, client: client, resultChan: resultChan}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 	result := <-resultChan
 	return result.res, result.err
 }
 
 // Automated email + password login. 2FA needs to be disabled
-func Login(email, password, otpSecret, proxy string) (string, error) {
+func Login(ctx context.Context, email, password, otpSecret, proxy string) (string, error) {
 	// Create a cookie jar
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -121,7 +124,7 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		}
 	}
 
-	firstRes, err := rateLimitedSendHTTPRequest(
+	firstRes, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "GET",
 			URL:    "https://identity.bugcrowd.com/login?user_hint=researcher&returnTo=/dashboard",
@@ -148,7 +151,7 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 	}
 
 	// Step 1: Initial login with username/password (without OTP)
-	firstLoginRes, err := rateLimitedSendHTTPRequest(
+	firstLoginRes, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "POST",
 			URL:    "https://identity.bugcrowd.com/login",
@@ -192,7 +195,7 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 	}
 
 	// Step 2: Submit OTP
-	otpRes, err := rateLimitedSendHTTPRequest(
+	otpRes, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "POST",
 			URL:    "https://identity.bugcrowd.com/auth/otp-challenge",
@@ -229,7 +232,7 @@ func Login(email, password, otpSecret, proxy string) (string, error) {
 		return "", err
 	}
 
-	redirectRes, err := rateLimitedSendHTTPRequest(
+	redirectRes, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "GET",
 			URL:    redirectUrl,
@@ -331,7 +334,7 @@ func resolveBugcrowdAPIURL(pathOrURL string) (string, error) {
 	return resolved.String(), nil
 }
 
-func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool) ([]string, error) {
+func GetProgramHandles(ctx context.Context, sessionToken string, engagementType string, pvtOnly bool) ([]string, error) {
 	pageIndex := 1
 	var totalCount int
 	totalCountKnown := false
@@ -345,7 +348,7 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 		var res *whttp.WHTTPRes
 		var err error
 
-		res, err = rateLimitedSendHTTPRequest(
+		res, err = rateLimitedSendHTTPRequest(ctx,
 			&whttp.WHTTPReq{
 				Method: "GET",
 				URL:    listEndpointURL + strconv.Itoa(pageIndex),
@@ -416,7 +419,7 @@ func GetProgramHandles(sessionToken string, engagementType string, pvtOnly bool)
 	return paths, nil
 }
 
-func GetProgramScope(handle string, categories string, token string) (pData scope.ProgramData, err error) {
+func GetProgramScope(ctx context.Context, handle string, categories string, token string) (pData scope.ProgramData, err error) {
 	isEngagement := strings.HasPrefix(handle, "/engagements/")
 	if isEngagement {
 		handle = strings.TrimPrefix(handle, "/engagements/")
@@ -426,19 +429,19 @@ func GetProgramScope(handle string, categories string, token string) (pData scop
 
 	if isEngagement {
 		var getBriefVersionDocument string
-		getBriefVersionDocument, err = getEngagementBriefVersionDocument("/engagements/"+handle, token)
+		getBriefVersionDocument, err = getEngagementBriefVersionDocument(ctx, "/engagements/"+handle, token)
 		if err != nil {
 			return pData, err
 		}
 
 		if getBriefVersionDocument != "" {
-			err = extractScopeFromEngagement(getBriefVersionDocument, categories, token, &pData)
+			err = extractScopeFromEngagement(ctx, getBriefVersionDocument, categories, token, &pData)
 			if err != nil {
 				return pData, err
 			}
 		}
 	} else {
-		err = extractScopeFromTargetGroups(pData.Url, categories, token, &pData)
+		err = extractScopeFromTargetGroups(ctx, pData.Url, categories, token, &pData)
 		if err != nil {
 			return pData, err
 		}
@@ -447,12 +450,12 @@ func GetProgramScope(handle string, categories string, token string) (pData scop
 	return pData, nil
 }
 
-func getEngagementBriefVersionDocument(handle string, token string) (string, error) {
+func getEngagementBriefVersionDocument(ctx context.Context, handle string, token string) (string, error) {
 	pageURL, err := resolveBugcrowdAPIURL(handle)
 	if err != nil {
 		return "", err
 	}
-	res, err := rateLimitedSendHTTPRequest(
+	res, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "GET",
 			URL:    pageURL,
@@ -499,7 +502,7 @@ func getEngagementBriefVersionDocument(handle string, token string) (string, err
 	return path + ".json", nil
 }
 
-func extractScopeFromEngagement(getBriefVersionDocument string, categories string, token string, pData *scope.ProgramData) (err error) {
+func extractScopeFromEngagement(ctx context.Context, getBriefVersionDocument string, categories string, token string, pData *scope.ProgramData) (err error) {
 	if getBriefVersionDocument == "" || getBriefVersionDocument == ".json" {
 		// Missing brief endpoint usually means compliance gate / 2FA / HTML change.
 		// Do not invent sentinel targets that would pollute storage and notifications.
@@ -510,7 +513,7 @@ func extractScopeFromEngagement(getBriefVersionDocument string, categories strin
 	if err != nil {
 		return err
 	}
-	res, err := rateLimitedSendHTTPRequest(
+	res, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "GET",
 			URL:    briefURL,
@@ -582,8 +585,8 @@ func extractScopeFromEngagement(getBriefVersionDocument string, categories strin
 	return nil
 }
 
-func extractScopeFromTargetGroups(url string, categories string, token string, pData *scope.ProgramData) error {
-	res, err := rateLimitedSendHTTPRequest(
+func extractScopeFromTargetGroups(ctx context.Context, url string, categories string, token string, pData *scope.ProgramData) error {
+	res, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "GET",
 			URL:    url + "/target_groups",
@@ -612,7 +615,7 @@ func extractScopeFromTargetGroups(url string, categories string, token string, p
 	noScopeTable := true
 	for i, scopeTableURL := range gjson.Get(res.BodyString, "groups.#.targets_url").Array() {
 		inScope := gjson.Get(res.BodyString, fmt.Sprintf("groups.%d.in_scope", i)).Bool()
-		err = extractScopeFromTargetTable(scopeTableURL.String(), categories, token, pData, inScope)
+		err = extractScopeFromTargetTable(ctx, scopeTableURL.String(), categories, token, pData, inScope)
 		if err != nil {
 			return err
 		}
@@ -626,12 +629,12 @@ func extractScopeFromTargetGroups(url string, categories string, token string, p
 	return nil
 }
 
-func extractScopeFromTargetTable(scopeTableURL string, categories string, token string, pData *scope.ProgramData, inScope bool) error {
+func extractScopeFromTargetTable(ctx context.Context, scopeTableURL string, categories string, token string, pData *scope.ProgramData, inScope bool) error {
 	tableURL, err := resolveBugcrowdAPIURL(scopeTableURL)
 	if err != nil {
 		return err
 	}
-	res, err := rateLimitedSendHTTPRequest(
+	res, err := rateLimitedSendHTTPRequest(ctx,
 		&whttp.WHTTPReq{
 			Method: "GET",
 			URL:    tableURL,
