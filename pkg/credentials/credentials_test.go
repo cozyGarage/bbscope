@@ -1,9 +1,19 @@
 package credentials
 
 import (
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
+
+// TestMain swaps in the in-memory keyring so tests never block on a real
+// desktop Secret Service (dbus) unlock prompt.
+func TestMain(m *testing.M) {
+	keyring.MockInit()
+	os.Exit(m.Run())
+}
 
 func TestKeyConstants(t *testing.T) {
 	// Verify all key constants are properly formatted
