@@ -208,11 +208,17 @@ func groupEntriesForImport(entries []storage.Entry) ([]programKey, map[programKe
 		items := grouped[key]
 		pos, exists := index[key][identity]
 		if !exists {
+			// An "ai" row's InScope is the variant's effective value; the base
+			// target's own flag travels in BaseInScope (absent in old backups).
+			baseInScope := e.InScope
+			if e.BaseInScope != nil {
+				baseInScope = *e.BaseInScope
+			}
 			items = append(items, storage.TargetItem{
 				URI:         raw,
 				Category:    baseCat,
 				Description: e.Description,
-				InScope:     e.InScope,
+				InScope:     baseInScope,
 				IsBBP:       e.IsBBP,
 			})
 			pos = len(items) - 1
@@ -234,7 +240,8 @@ func groupEntriesForImport(entries []storage.Entry) ([]programKey, map[programKe
 				v.HasCategory = true
 				v.Category = e.Category
 			}
-			v.HasInScope = true
+			// Only an effective value that differs from the base is an override.
+			v.HasInScope = e.BaseInScope == nil || *e.BaseInScope != e.InScope
 			v.InScope = e.InScope
 			item.Variants = append(item.Variants, v)
 		}
@@ -381,6 +388,12 @@ func parseimportCSV(r io.Reader) ([]storage.Entry, error) {
 			inScope = parseCSVBool(raw)
 		}
 
+		var baseInScope *bool
+		if raw := field(record, "base_in_scope"); raw != "" {
+			b := parseCSVBool(raw)
+			baseInScope = &b
+		}
+
 		entries = append(entries, storage.Entry{
 			ProgramURL:       field(record, "program_url"),
 			Platform:         field(record, "platform"),
@@ -390,6 +403,7 @@ func parseimportCSV(r io.Reader) ([]storage.Entry, error) {
 			Category:         field(record, "category"),
 			BaseCategory:     field(record, "base_category"),
 			BaseTargetRaw:    field(record, "base_target_raw"),
+			BaseInScope:      baseInScope,
 			Description:      field(record, "description"),
 			InScope:          inScope,
 			IsBBP:            parseCSVBool(field(record, "is_bbp")),

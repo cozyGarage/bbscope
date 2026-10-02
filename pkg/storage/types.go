@@ -24,6 +24,9 @@ type Entry struct {
 
 	Category     string `json:"category"`
 	BaseCategory string `json:"base_category,omitempty"`
+	// BaseInScope is the raw target's own in_scope on "ai" rows, whose InScope
+	// is the variant's effective value. Nil for raw rows and older exports.
+	BaseInScope  *bool  `json:"base_in_scope,omitempty"`
 	Description  string `json:"description,omitempty"`
 	InScope      bool   `json:"in_scope"`
 	IsBBP        bool   `json:"is_bbp"`

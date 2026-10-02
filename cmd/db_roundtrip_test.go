@@ -372,3 +372,59 @@ func TestIntegration_ImportMergesWithoutDeletingLiveTargets(t *testing.T) {
 		t.Fatalf("replace import should leave only the file contents, got %#v", got)
 	}
 }
+
+// An AI row's in_scope is the variant's effective value. Import used it as the
+// base target's in_scope, so an in-scope target with an out-of-scope variant
+// came back out of scope.
+func TestIntegration_ImportKeepsBaseInScopeUnderVariantOverride(t *testing.T) {
+	db, raw := openRoundtripDB(t)
+	ctx := context.Background()
+	platform := "itest_basescope_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	programURL := "https://example.com/" + platform + "/a"
+	cleanup := func() {
+		_, _ = raw.ExecContext(ctx, `DELETE FROM targets_ai_enhanced WHERE target_id IN (
+			SELECT tr.id FROM targets_raw tr JOIN programs p ON tr.program_id = p.id WHERE p.platform = $1)`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM targets_raw WHERE program_id IN (SELECT id FROM programs WHERE platform = $1)`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM scope_changes WHERE platform = $1`, platform)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM programs WHERE platform = $1`, platform)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	built, err := storage.BuildEntries(programURL, platform, "a", []storage.TargetItem{{
+		URI: "*.base.example.com", Category: "wildcard", InScope: true,
+		Variants: []storage.TargetVariant{{Value: "legacy.base.example.com", HasInScope: true, InScope: false}},
+	}})
+	if err != nil {
+		t.Fatalf("BuildEntries: %v", err)
+	}
+	if _, err := db.UpsertProgramEntriesWithOptions(ctx, programURL, platform, "a", built,
+		storage.UpsertOptions{SkipChangeLog: true}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+	exported, err := db.ListEntries(ctx, storage.ListOptions{Platform: platform, IncludeOOS: true})
+	if err != nil {
+		t.Fatalf("ListEntries: %v", err)
+	}
+
+	cleanup()
+	if _, failed := importEntries(ctx, db, exported, false); failed != 0 {
+		t.Fatalf("import failed for %d entries", failed)
+	}
+
+	var baseInScope int
+	var variantInScope sql.NullInt64
+	if err := raw.QueryRowContext(ctx, `
+		SELECT tr.in_scope, a.in_scope FROM targets_raw tr
+		JOIN programs p ON tr.program_id = p.id
+		JOIN targets_ai_enhanced a ON a.target_id = tr.id
+		WHERE p.platform = $1`, platform).Scan(&baseInScope, &variantInScope); err != nil {
+		t.Fatalf("reading restored target: %v", err)
+	}
+	if baseInScope != 1 {
+		t.Errorf("base in_scope = %d after round trip, want 1", baseInScope)
+	}
+	if !variantInScope.Valid || variantInScope.Int64 != 0 {
+		t.Errorf("variant in_scope = %+v after round trip, want 0", variantInScope)
+	}
+}
