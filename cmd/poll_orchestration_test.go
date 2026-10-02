@@ -96,3 +96,18 @@ func TestRunPollWithPollers_EmptyHandles(t *testing.T) {
 		t.Fatalf("empty handle list should succeed: %v", err)
 	}
 }
+
+// One platform's auth failure used to abort `bbscope poll` before any of the
+// platforms that did authenticate were polled.
+func TestPollAvailable_AuthFailureStillPollsOthers(t *testing.T) {
+	mock := platforms.NewMockPoller("mock")
+	authErr := errors.New("bugcrowd: 403")
+
+	err := pollAvailable(newOrchestrationTestCmd(), []platforms.PlatformPoller{mock}, authErr)
+	if !errors.Is(err, authErr) {
+		t.Fatalf("err = %v, want the auth error kept for the exit code", err)
+	}
+	if got := len(mock.FetchedHandles()); got != 2 {
+		t.Fatalf("fetched %d programs, want 2: authenticated platforms must still be polled", got)
+	}
+}
