@@ -10,10 +10,10 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
-	github.com/tidwall/gjson v1.19.0
+	github.com/tidwall/gjson v1.20.0
 	github.com/weppos/publicsuffix-go v0.50.3
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 )
 
 require (
